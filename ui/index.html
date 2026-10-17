@@ -11,7 +11,7 @@
 <canvas id="gl" aria-hidden="true"></canvas>
 <canvas id="fx" aria-label="Neural map of your drives. The search box and the results list do everything the map does."></canvas>
 
-<header class="bar">
+<header class="bar" data-tauri-drag-region>
   <div class="brand">
     <svg width="20" height="20" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="3" fill="currentColor"/><circle cx="11" cy="11" r="8" fill="none" stroke="var(--acc)" stroke-width="1" stroke-dasharray="3 2"/></svg>
     <span>ORBIS</span>
@@ -30,6 +30,11 @@
     </button>
     <button id="win" type="button" title="F11">WINDOW</button>
     <button id="exit" type="button" class="exit" title="Close Orbis completely (Ctrl+Q)">EXIT</button>
+    <span class="wc" aria-label="Window">
+      <button type="button" id="wmin" title="Minimise" aria-label="Minimise"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.5h8" stroke="currentColor" stroke-width="1.2"/></svg></button>
+      <button type="button" id="wmax" title="Maximise" aria-label="Maximise"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2.1" y="2.1" width="7.8" height="7.8" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+      <button type="button" id="wclose" title="Hide to the tray (Orbis keeps running)" aria-label="Hide to the tray"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></button>
+    </span>
   </div>
 </header>
 
@@ -61,6 +66,7 @@
   <div class="pline" id="psemline"></div>
   <div class="pt" style="margin-top:12px">STARTUP &amp; SCREEN SAVER</div>
   <button type="button" class="tgl" id="auto" aria-pressed="false">Start with Windows</button>
+  <button type="button" class="tgl" id="ptray" aria-pressed="false" style="margin-top:6px">Start quietly in the tray</button>
   <button type="button" class="tgl" id="psaver" aria-pressed="false" style="margin-top:6px">Screen saver</button>
   <div class="seg" id="psvmin" style="margin-top:6px" hidden><button type="button" data-svmin="5">5 MIN</button><button type="button" data-svmin="10">10 MIN</button><button type="button" data-svmin="15">15 MIN</button><button type="button" data-svmin="30">30 MIN</button></div>
   <button type="button" class="tgl" id="psvprev" style="margin-top:6px">Preview the screen saver</button>

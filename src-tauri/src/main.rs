@@ -76,6 +76,9 @@ struct Settings {
     /// start with Windows (the Run key is the switch; this remembers it, so it can be put back)
     #[serde(default)]
     autostart: Option<bool>,
+    /// when Windows starts Orbis, stay in the tray instead of opening full screen
+    #[serde(default)]
+    tray_start: bool,
 }
 fn ten() -> u32 {
     10
@@ -216,6 +219,104 @@ fn apply_kiosk(w: &WebviewWindow, on: bool) {
     }
 }
 
+// ---------------------------------------------------------------- tray and window
+// Orbis lives in the tray: the window's close button hides it there (live activity, the screen saver
+// and indexing keep going, drawing stops), a click on the tray icon brings it back, and EXIT (or
+// "Exit Orbis" in the tray menu) closes it completely.
+
+struct TrayItems {
+    autostart: tauri::menu::CheckMenuItem<tauri::Wry>,
+    tray_start: tauri::menu::CheckMenuItem<tauri::Wry>,
+    saver: tauri::menu::CheckMenuItem<tauri::Wry>,
+}
+
+fn show_main(app: &AppHandle) {
+    if let Some(w) = main_window(app) {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+/// the tray menu's ticks follow the settings, wherever they were changed
+fn sync_tray(app: &AppHandle) {
+    if let Some(t) = app.try_state::<TrayItems>() {
+        let s = settings_of(app);
+        let _ = t.autostart.set_checked(autostart_on());
+        let _ = t.tray_start.set_checked(s.tray_start);
+        let _ = t.saver.set_checked(s.saver);
+    }
+}
+
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+    let s = settings_of(app);
+    let open = MenuItem::with_id(app, "open", "Open Orbis", true, None::<&str>)?;
+    let autostart = CheckMenuItem::with_id(app, "autostart", "Start with Windows", true, autostart_on(), None::<&str>)?;
+    let tray_start = CheckMenuItem::with_id(app, "tray_start", "Start quietly in the tray", true, s.tray_start, None::<&str>)?;
+    let saver = CheckMenuItem::with_id(app, "saver", "Screen saver", true, s.saver, None::<&str>)?;
+    let preview = MenuItem::with_id(app, "preview", "Preview the screen saver", true, None::<&str>)?;
+    let rescan = MenuItem::with_id(app, "rescan", "Re-scan drives", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Exit Orbis", true, None::<&str>)?;
+    let (s1, s2, s3) = (PredefinedMenuItem::separator(app)?, PredefinedMenuItem::separator(app)?, PredefinedMenuItem::separator(app)?);
+    let menu = Menu::with_items(app, &[&open, &s1, &autostart, &tray_start, &saver, &preview, &s2, &rescan, &s3, &quit])?;
+    app.manage(TrayItems { autostart, tray_start, saver });
+    let mut tray = TrayIconBuilder::with_id("orbis").tooltip("Orbis").menu(&menu).show_menu_on_left_click(false);
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.on_menu_event(|app, ev| {
+        let toggle = |patch: serde_json::Value| {
+            if let Err(e) = update_settings(patch, app.clone()) {
+                let _ = app.emit("toast", e);
+            }
+        };
+        match ev.id().as_ref() {
+            "open" => show_main(app),
+            "autostart" => {
+                let on = !autostart_on();
+                let _ = set_autostart(on, app.clone());
+            }
+            "tray_start" => toggle(serde_json::json!({ "tray_start": !settings_of(app).tray_start })),
+            "saver" => toggle(serde_json::json!({ "saver": !settings_of(app).saver })),
+            "preview" => enter_saver(app),
+            "rescan" => start_index(app.clone(), true),
+            "quit" => quit_app(app.clone()),
+            _ => {}
+        }
+        sync_tray(app);
+        let _ = app.emit("prefs-changed", ());
+    })
+    .on_tray_icon_event(|tray, ev| {
+        if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = ev {
+            show_main(tray.app_handle());
+        }
+    })
+    .build(app)?;
+    Ok(())
+}
+
+/// Orbis's own title bar (the window has no classic frame): minimise, maximise, hide to the tray
+#[tauri::command]
+fn win_minimize(app: AppHandle) {
+    if let Some(w) = main_window(&app) {
+        let _ = w.minimize();
+    }
+}
+#[tauri::command]
+fn win_toggle_maximize(app: AppHandle) {
+    if let Some(w) = main_window(&app) {
+        let _ = if w.is_maximized().unwrap_or(false) { w.unmaximize() } else { w.maximize() };
+    }
+}
+#[tauri::command]
+fn win_hide(app: AppHandle) {
+    if let Some(w) = main_window(&app) {
+        let _ = w.hide();
+    }
+}
+
 // ---------------------------------------------------------------- screen saver
 // Windows runs a screen saver as "<file>.scr /s" ("/p <hwnd>" for the little preview, "/c" for its
 // settings). Orbis's .scr is a copy of orbis.exe. When Orbis is already open, the copy hands over to it
@@ -228,6 +329,8 @@ struct Saver {
     only: AtomicBool,
     /// Orbis was minimised before the screen saver: minimise it again afterwards
     was_min: AtomicBool,
+    /// Orbis was hidden in the tray before the screen saver: hide it again afterwards
+    was_hidden: AtomicBool,
 }
 
 mod handoff {
@@ -340,6 +443,7 @@ fn enter_saver(app: &AppHandle) {
     handoff::saver_running(true);
     if let Some(w) = main_window(app) {
         sv.was_min.store(w.is_minimized().unwrap_or(false), Ordering::SeqCst);
+        sv.was_hidden.store(!w.is_visible().unwrap_or(true), Ordering::SeqCst);
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_fullscreen(true);
@@ -392,7 +496,9 @@ fn exit_saver(app: AppHandle) {
     if let Some(w) = main_window(&app) {
         let _ = w.set_always_on_top(false);
         apply_kiosk(&w, settings_of(&app).kiosk);
-        if sv.was_min.load(Ordering::SeqCst) {
+        if sv.was_hidden.load(Ordering::SeqCst) {
+            let _ = w.hide();
+        } else if sv.was_min.load(Ordering::SeqCst) {
             let _ = w.minimize();
         }
     }
@@ -777,6 +883,7 @@ fn update_settings(patch: serde_json::Value, app: AppHandle) -> Result<Settings,
     if after.saver != before.saver || (after.saver && after.saver_minutes != before.saver_minutes) {
         apply_screensaver(after.saver, after.saver_minutes)?;
     }
+    sync_tray(&app);
     if !after.semantic || after.sem_device != before.sem_device {
         app.state::<sem::Sem>().stop();
     }
@@ -936,6 +1043,10 @@ fn run_command(name: String, app: AppHandle) -> Result<(), String> {
 }
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+fn autostart_value() -> Option<String> {
+    use winreg::{enums::HKEY_CURRENT_USER, RegKey};
+    RegKey::predef(HKEY_CURRENT_USER).open_subkey(RUN_KEY).and_then(|k| k.get_value::<String, _>("Orbis")).ok()
+}
 fn autostart_on() -> bool {
     use winreg::{enums::HKEY_CURRENT_USER, RegKey};
     RegKey::predef(HKEY_CURRENT_USER).open_subkey(RUN_KEY).and_then(|k| k.get_value::<String, _>("Orbis")).is_ok()
@@ -946,7 +1057,7 @@ fn write_autostart(on: bool) -> Result<(), String> {
     let (k, _) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(RUN_KEY).map_err(|e| e.to_string())?;
     if on {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        k.set_value("Orbis", &format!("\"{}\"", exe.display())).map_err(|e| e.to_string())?;
+        k.set_value("Orbis", &format!("\"{}\" --autostart", exe.display())).map_err(|e| e.to_string())?;
     } else {
         let _ = k.delete_value("Orbis");
     }
@@ -959,6 +1070,8 @@ fn set_autostart(on: bool, app: AppHandle) -> Result<bool, String> {
     let mut w = st.write().unwrap();
     w.autostart = Some(on);
     save_settings(&w);
+    drop(w);
+    sync_tray(&app);
     Ok(autostart_on())
 }
 
@@ -971,8 +1084,8 @@ fn restore_windows_settings(app: &AppHandle) {
     let mut s = st.write().unwrap();
     match s.autostart {
         None => s.autostart = Some(autostart_on()), // first run of this version: learn it
-        Some(true) if !autostart_on() => {
-            let _ = write_autostart(true);
+        Some(true) if !autostart_value().is_some_and(|v| v.contains("--autostart")) => {
+            let _ = write_autostart(true); // missing, or written by an older version
         }
         _ => {}
     }
@@ -1042,6 +1155,7 @@ fn main() {
     }
     migrate_from_twin();
     let settings = load_settings();
+    let quiet = args.iter().any(|a| a == "--autostart") && settings.tray_start && kind == Launch::Normal;
     let app = tauri::Builder::default()
         // a second start (the screen saver, a shortcut) hands over to the Orbis already running
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
@@ -1056,7 +1170,7 @@ fn main() {
                 }
             }
         }))
-        .manage(Saver { active: AtomicBool::new(false), only: AtomicBool::new(kind == Launch::Saver), was_min: AtomicBool::new(false) })
+        .manage(Saver { active: AtomicBool::new(false), only: AtomicBool::new(kind == Launch::Saver), was_min: AtomicBool::new(false), was_hidden: AtomicBool::new(false) })
         .manage(Shared {
             idx: RwLock::new(None),
             building: AtomicBool::new(false),
@@ -1083,8 +1197,13 @@ fn main() {
             }
             if let Some(w) = main_window(&h) {
                 apply_kiosk(&w, settings.kiosk);
-                let _ = w.show();
-                let _ = w.set_focus();
+                if !quiet {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+            if let Err(e) = build_tray(&h) {
+                eprintln!("no tray icon: {e}");
             }
             {
                 let h2 = h.clone();
@@ -1106,9 +1225,17 @@ fn main() {
             start_index(h, false);
             Ok(())
         })
+        // the window's close button (and Alt+F4) hides Orbis in the tray; EXIT closes it for good
+        .on_window_event(|w, ev| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = ev {
+                api.prevent_close();
+                let _ = w.hide();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
-            vscode_item, rebuild, apps_search, apps_top, app_icons, pin_app, run_command, set_autostart, launch_app, sys_stats, set_kiosk, set_theme, quit_app, system_profile, install_engine, update_settings, exit_saver, start_saver
+            vscode_item, rebuild, apps_search, apps_top, app_icons, pin_app, run_command, set_autostart, launch_app, sys_stats, set_kiosk, set_theme, quit_app, system_profile, install_engine, update_settings, exit_saver, start_saver,
+            win_minimize, win_toggle_maximize, win_hide
         ])
         .build(tauri::generate_context!())
         .expect("error while building Orbis");

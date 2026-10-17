@@ -28,7 +28,10 @@ Everything runs on your PC. Orbis sends nothing anywhere.
 - **Screen saver (optional).** When the PC sits idle, Orbis takes over the screen with a big clock and the
   turning globe. It first catches up on indexing, then shows the PC's health: processor, memory, drives
   and battery. Any key, click or mouse movement brings you back.
-- **8 themes**, full-screen or windowed, and keyboard-first.
+- **In the tray.** Closing the window hides Orbis in the system tray, where it keeps watching for changes
+  and stays ready as the screen saver. Click the tray icon to bring it back. Its menu also has Start with
+  Windows, Start quietly in the tray, the screen saver, and Exit.
+- **8 themes**, full screen or in a modern frameless window, and keyboard-first.
 
 ## Built for every PC
 
@@ -83,7 +86,7 @@ settings and icons stay in `%LOCALAPPDATA%\Orbis`.
 | Esc | clear |
 | F11 | switch between full screen and a window |
 | Ctrl+K | jump to the search box |
-| Ctrl+Q | quit |
+| Ctrl+Q | quit completely (closing the window only hides Orbis in the tray) |
 | right-click an app | pin or unpin it |
 
 ## Build from source

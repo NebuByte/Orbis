@@ -650,7 +650,7 @@ $('rlist').addEventListener('click', e => {
 });
 // right-click an app (here or in the list on the left) to pin or unpin it
 $('rlist').addEventListener('contextmenu', e => { const r = e.target.closest('[data-r]'), h = r && rows[+r.dataset.r]; if (h && h.app) { e.preventDefault(); togglePin(h.app); } });
-$('rlist').addEventListener('dblclick', e => { const r = e.target.closest('[data-r]'); const h = r && rows[+r.dataset.r]; if (h && !h.app) act('open_item', h); });
+$('rlist').addEventListener('dblclick', e => { const r = e.target.closest('[data-r]'); const h = r && rows[+r.dataset.r]; if (h && (h.node || h.path)) act('open_item', h); });
 $('rlist').addEventListener('mouseover', e => { const r = e.target.closest('[data-r]'); const h = r ? rows[+r.dataset.r] : null; const n = h && !h.app ? h : null; if (n !== hl) { hl = n; litVer++; } });
 $('rlist').addEventListener('mouseleave', () => { if (hl) { hl = null; litVer++; } });
 
@@ -789,6 +789,9 @@ async function refreshStatus() {
   $('pfiles').innerHTML = `<span>Files</span> ${num(st.items)}${st.building ? ' · re-scanning…' : ` · ${day(st.built_at)}`}`;
   const s = st.sem;
   $('auto').setAttribute('aria-pressed', String(!!st.autostart)); $('auto').textContent = 'Start with Windows: ' + (st.autostart ? 'ON' : 'OFF');
+  const tq = setting('tray_start', false);
+  $('ptray').setAttribute('aria-pressed', String(tq)); $('ptray').textContent = 'Start quietly in the tray: ' + (tq ? 'ON' : 'OFF');
+  $('ptray').disabled = !st.autostart; $('ptray').title = st.autostart ? 'When Windows starts Orbis, it waits in the tray instead of opening full screen' : 'Turn on Start with Windows first';
   $('pdocs').innerHTML = !s || !s.available ? '<span>Documents</span> not installed'
     : s.live ? `<span>Documents</span> reading ${num(s.done)} / ${num(s.of)}` : `<span>Documents</span> ${num(s.files)} · ${s.built ? day(s.built) : 'never'}`;
   return st;
@@ -799,7 +802,13 @@ setInterval(() => { if (!document.hidden) refreshStatus(); }, 15000);
 
 // ---------------------------------------------------------------- window, popover, keys
 let kiosk = true;
-function renderWin() { $('win').textContent = kiosk ? 'WINDOW' : 'FULL SCREEN'; }
+function renderWin() { $('win').textContent = kiosk ? 'WINDOW' : 'FULL SCREEN'; document.body.classList.toggle('windowed', !kiosk); }
+$('wmin').onclick = () => invoke('win_minimize');
+$('wmax').onclick = () => invoke('win_toggle_maximize');
+$('wclose').onclick = () => invoke('win_hide');
+// the tray menu changed a setting (or Rust has something to say)
+listen('prefs-changed', () => refreshStatus());
+listen('toast', e => toast(String(e.payload)));
 async function toggleKiosk() { kiosk = await invoke('set_kiosk', { on: !kiosk }); renderWin(); }
 $('win').onclick = toggleKiosk;
 $('exit').onclick = () => invoke('quit_app');
@@ -823,7 +832,7 @@ $('q').addEventListener('input', e => {
 });
 $('q').addEventListener('keydown', e => {
   const n = rows.length;
-  const plain = h => !h.app && !h.cmd && h.calc == null;
+  const plain = h => !!(h.node || h.path);
   if (e.key === 'ArrowDown' && n) { e.preventDefault(); cursor = (cursor + 1) % n; armed = null; hl = plain(rows[cursor]) ? rows[cursor] : null; litVer++; renderResults(); }
   else if (e.key === 'ArrowUp' && n) { e.preventDefault(); cursor = (cursor - 1 + n) % n; armed = null; hl = plain(rows[cursor]) ? rows[cursor] : null; litVer++; renderResults(); }
   else if (e.key === 'Enter' && n) {
@@ -1401,6 +1410,7 @@ $('psem').onclick = () => {
   setPrefs({ semantic: !setting('semantic', false) });
 };
 $('psetup').onclick = () => { $('pop').hidden = true; openSetup(false); };
+$('ptray').onclick = () => setPrefs({ tray_start: !setting('tray_start', false) });
 $('pcap').onclick = e => { if (e.target.id === 'pretry') { setPrefs({ perf_cap: 0 }).then(() => { computeCaps(); toast('Orbis will try the smoother settings again'); }); } };
 $('psaver').onclick = async () => {
   const on = !setting('saver', false);
