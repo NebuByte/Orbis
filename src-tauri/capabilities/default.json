@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Orbis main window: core APIs (events) plus the app's own commands",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

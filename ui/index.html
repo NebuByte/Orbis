@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orbis</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="idle boot">
+<canvas id="bg" aria-hidden="true"></canvas>
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="fx" aria-label="Neural map of your drives. The search box and the results list do everything the map does."></canvas>
+
+<header class="bar">
+  <div class="brand">
+    <svg width="20" height="20" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="3" fill="currentColor"/><circle cx="11" cy="11" r="8" fill="none" stroke="var(--acc)" stroke-width="1" stroke-dasharray="3 2"/></svg>
+    <span>ORBIS</span>
+  </div>
+  <div class="clock" aria-label="Time and date"><b id="clock">--:--</b><span id="date"></span></div>
+  <label class="search" for="q">
+    <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><circle cx="6.5" cy="6.5" r="5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.4"/></svg>
+    <input id="q" type="search" placeholder="Find by name, or describe it…" autocomplete="off" spellcheck="false" dir="auto" disabled>
+    <span class="mode" id="mode" hidden></span>
+    <button class="clr" id="clr" type="button" aria-label="Clear search" hidden>×</button>
+  </label>
+  <div class="status">
+    <span class="npu" id="npu" hidden><i></i>NPU</span>
+    <button id="gear" type="button" aria-label="Themes and index" aria-expanded="false" aria-controls="pop">
+      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="5" cy="5" r="3.2" fill="currentColor" opacity=".9"/><circle cx="11" cy="5" r="3.2" fill="none" stroke="currentColor"/><circle cx="8" cy="11" r="3.2" fill="none" stroke="currentColor"/></svg>
+    </button>
+    <button id="win" type="button" title="F11">WINDOW</button>
+    <button id="exit" type="button" class="exit" title="Close Orbis completely (Ctrl+Q)">EXIT</button>
+  </div>
+</header>
+
+<aside class="data" id="data" aria-label="System"></aside>
+
+<section class="results" id="results" hidden aria-label="Results">
+  <div class="rh"><span id="rh">RESULTS</span><span id="rmeta"></span></div>
+  <div class="rlist" id="rlist"></div>
+  <div class="detail" id="detail" hidden aria-live="polite"></div>
+</section>
+
+<nav class="dock" id="dock" aria-label="Apps you use most"></nav>
+<footer class="keys">↑↓ select · ↵ open &amp; clear · = calculate · &gt; commands · type: changed: in: big: filters · Esc clear · F11 window · Ctrl+Q exit</footer>
+
+<div class="pop" id="pop" hidden>
+  <div class="pt">THEME</div>
+  <div class="swatches" id="swatches"></div>
+  <div class="pt">INDEX</div>
+  <div class="pline" id="pfiles"></div>
+  <div class="pline" id="pdocs"></div>
+  <div class="pacts"><button type="button" data-cmd="rebuild">Re-scan drives</button><button type="button" data-cmd="reindex_docs">Re-read documents</button></div>
+  <div class="pt" style="margin-top:12px">PERFORMANCE</div>
+  <div class="seg" id="pfps"><button type="button" data-fps="60">60 FPS</button><button type="button" data-fps="auto">AUTO</button><button type="button" data-fps="30">30 FPS</button></div>
+  <div class="seg" id="pvis"><button type="button" data-vis="full">FULL EFFECTS</button><button type="button" data-vis="lite">LITE</button></div>
+  <div class="pline pcap" id="pcap" hidden></div>
+  <div class="pt" style="margin-top:12px">FEATURES</div>
+  <button type="button" class="tgl" id="plive" aria-pressed="false">Live activity</button>
+  <button type="button" class="tgl" id="psem" aria-pressed="false" style="margin-top:6px">Search by meaning</button>
+  <div class="pline" id="psemline"></div>
+  <div class="pt" style="margin-top:12px">STARTUP &amp; SCREEN SAVER</div>
+  <button type="button" class="tgl" id="auto" aria-pressed="false">Start with Windows</button>
+  <button type="button" class="tgl" id="psaver" aria-pressed="false" style="margin-top:6px">Screen saver</button>
+  <div class="seg" id="psvmin" style="margin-top:6px" hidden><button type="button" data-svmin="5">5 MIN</button><button type="button" data-svmin="10">10 MIN</button><button type="button" data-svmin="15">15 MIN</button><button type="button" data-svmin="30">30 MIN</button></div>
+  <button type="button" class="tgl" id="psvprev" style="margin-top:6px">Preview the screen saver</button>
+  <button type="button" class="tgl" id="psetup" style="margin-top:6px">Run the setup again</button>
+</div>
+<div class="wiz" id="wiz" hidden role="dialog" aria-modal="true" aria-labelledby="wizT"><div class="wizbox" id="wizbox"></div></div>
+<div class="overlay" id="overlay" hidden><div><b id="ovT">Mapping your drives</b><span id="ovS">Starting…</span></div></div>
+<section class="saver" id="saver" hidden aria-hidden="true">
+  <div class="sv-clock"><b id="svT">--:--</b><span id="svD"></span></div>
+  <div class="sv-side"><div class="sv-ph" id="svPh"></div><div class="sv-body" id="svBody"></div></div>
+  <div class="sv-brand"><svg width="16" height="16" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="3" fill="currentColor"/><circle cx="11" cy="11" r="8" fill="none" stroke="var(--acc)" stroke-width="1" stroke-dasharray="3 2"/></svg>ORBIS</div>
+</section>
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

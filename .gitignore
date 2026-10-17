@@ -1,0 +1,16 @@
+# build output
+src-tauri/target/
+src-tauri/gen/
+
+# the search engine's private Python and model are installed per PC, never committed
+semantic/.venv/
+semantic/model/
+semantic/__pycache__/
+__pycache__/
+
+# local logs and editor files
+*.log
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
