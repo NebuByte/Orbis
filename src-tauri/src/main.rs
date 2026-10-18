@@ -8,6 +8,7 @@ mod apps;
 mod env;
 mod index;
 mod news;
+mod preview;
 mod sem;
 mod sys;
 mod watch;
@@ -1073,6 +1074,29 @@ struct Details {
     came_from: Option<(String, String)>,
 }
 
+#[derive(Serialize)]
+struct Item {
+    id: u32,
+    name: String,
+    kind: u8,
+    size: u64,
+    count: u32,
+    mtime: u32,
+}
+/// a folder's contents for the quick preview (first 400, folders first)
+#[tauri::command]
+async fn folder_items(id: u32, s: State<'_, Shared>) -> Result<Vec<Item>, String> {
+    let ix = get(&s)?;
+    Ok(ix
+        .children(id, 400)
+        .into_iter()
+        .map(|c| {
+            let u = c as usize;
+            Item { id: c, name: ix.name(u).to_string(), kind: ix.kind[u], size: ix.size[u], count: ix.count[u], mtime: ix.mtime[u] }
+        })
+        .collect())
+}
+
 #[tauri::command]
 async fn details(id: u32, s: State<'_, Shared>) -> Result<Details, String> {
     let ix = get(&s)?;
@@ -1395,7 +1419,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            news::news, news::check_feed, news::open_link, scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
+            news::news, news::check_feed, news::open_link, preview::preview_text, preview::preview_office, folder_items, scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
             vscode_item, rebuild, apps_search, apps_top, app_icons, pin_app, run_command, set_autostart, launch_app, sys_stats, set_kiosk, set_theme, quit_app, system_profile, install_engine, update_settings, exit_saver, start_saver,
             win_minimize, win_toggle_maximize, win_hide
         ])

@@ -413,6 +413,16 @@ impl Index {
     fn norm_name(&self, i: usize) -> &str {
         &self.norm[self.norm_end[i] as usize..self.norm_end[i + 1] as usize]
     }
+    /// what is directly inside a folder: folders first, then by name (at most `limit`)
+    pub fn children(&self, i: u32, limit: usize) -> Vec<u32> {
+        let mut c: Vec<u32> = self.parent.par_iter().enumerate().filter(|(_, &p)| p == i).map(|(c, _)| c as u32).collect();
+        c.sort_by(|&a, &b| {
+            let (fa, fb) = (self.kind[a as usize] == K_FILE, self.kind[b as usize] == K_FILE);
+            fa.cmp(&fb).then_with(|| self.norm_name(a as usize).cmp(self.norm_name(b as usize)))
+        });
+        c.truncate(limit);
+        c
+    }
     /// (folders, files) directly inside - found by scanning, since the child table is not kept
     pub fn direct_children(&self, i: u32) -> (u32, u32) {
         let (d, f) = self

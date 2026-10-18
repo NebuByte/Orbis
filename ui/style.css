@@ -192,6 +192,40 @@ body.windowed .wc{display:flex}
 .wizbox .sw2:disabled{opacity:.35;cursor:not-allowed}
 .wizbox .bar{grid-column:1 / span 2;height:6px;border-radius:3px;background:color-mix(in srgb,var(--acc) 15%,transparent);overflow:hidden;margin-top:8px}
 .wizbox .bar i{display:block;height:100%;background:var(--acc);transition:width .4s}
+/* quick preview: beside the results, over the map */
+.ql{position:fixed;left:230px;right:398px;top:76px;bottom:96px;z-index:5;display:flex;flex-direction:column;border-radius:12px;overflow:hidden;
+  background:color-mix(in srgb,var(--bg) 92%,var(--acc));box-shadow:inset 0 0 0 1px var(--line),0 18px 50px rgba(0,0,0,.45);animation:pvIn .16s ease}
+.qlh{display:flex;align-items:center;gap:12px;padding:10px 12px 10px 16px;border-bottom:1px solid var(--line)}
+.qlh>div{flex:1;min-width:0;display:grid;gap:2px}
+.qlh b{font:600 13.5px var(--f-ui);color:var(--lit);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qlh small{font:10.5px var(--f-mono);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qlh .k{font:600 9px var(--f-mono);letter-spacing:.04em}
+.qlh button{height:28px;border:0;border-radius:6px;padding:0 12px;cursor:pointer;font:600 10px var(--f-hd);letter-spacing:.12em;background:transparent;color:var(--acc);box-shadow:inset 0 0 0 1px var(--line)}
+.qlh button:hover{color:var(--lit);box-shadow:inset 0 0 0 1px var(--acc)}
+.qlh button[data-ql=close]{width:28px;padding:0;font-size:16px;letter-spacing:0}
+.qlb{flex:1;min-height:0;overflow:auto;display:flex}
+.qlb>*{flex:1;min-width:0}
+.qli{width:100%;height:100%;object-fit:contain;background:#000}
+.qlp{border:0;width:100%;height:100%;background:#fff}
+.qlt{margin:0;padding:14px 16px;font:12px/1.55 var(--f-mono);color:var(--ink);white-space:pre-wrap;word-break:break-word;user-select:text}
+.qld{padding:16px 22px;font:13px/1.65 var(--f-ui);color:var(--ink);user-select:text}
+.qld p{margin:0 0 9px}
+.qld section{padding:10px 0;border-bottom:1px solid var(--line)}
+.qld section i{display:block;font:700 9px var(--f-hd);font-style:normal;letter-spacing:.2em;color:var(--dim);margin-bottom:6px}
+.qls{overflow:auto;padding:8px}
+.qls table{border-collapse:collapse;font:11.5px var(--f-ui);color:var(--ink)}
+.qls td{padding:4px 9px;border:1px solid var(--line);white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;user-select:text}
+.qls tr:first-child td{color:var(--lit);font-weight:600}
+.qlf{padding:6px 8px;align-self:flex-start;display:grid;gap:1px}
+.qlf div{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;padding:5px 8px;border-radius:6px;font:12px var(--f-ui);color:var(--ink)}
+.qlf div:hover{background:color-mix(in srgb,var(--acc) 7%,transparent)}
+.qlf .k{font:600 8.5px var(--f-mono);color:var(--acc);text-align:right}
+.qlf span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qlf small{font:10.5px var(--f-mono);color:var(--dim)}
+.qle{display:grid;place-content:center;justify-items:center;gap:10px;text-align:center;color:var(--dim);font:13px var(--f-ui);padding:30px}
+.qle .big{font:700 34px var(--f-mono)}
+body.saver .ql{display:none!important}
+@media (max-width:1050px){.ql{left:16px}}
 /* the news ticker: bottom left, up to the search box */
 .news{position:fixed;left:24px;bottom:43px;width:88px;height:34px;display:flex;align-items:center;gap:12px;padding:0 14px;border-radius:17px;
   background:color-mix(in srgb,var(--panel) 60%,transparent);box-shadow:inset 0 0 0 1px var(--line);z-index:3;overflow:hidden;opacity:.6;cursor:default;

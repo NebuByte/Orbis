@@ -541,6 +541,7 @@ async function loadDetails(n) {
   catch (e) { toast(String(e)); }
 }
 function resetAll() {
+  if (qlOn) closeQuick();
   clearTimeout(deb); clearTimeout(semDeb); seq++; $('q').value = ''; $('clr').hidden = true;
   nameHits = []; semHits = []; apps = []; total = 0; sel = null; selHit = null; selInfo = null; hl = null; cursor = 0;
   dropExtras([]); decideLead(); renderAll(); litVer++; fitAll();
@@ -638,6 +639,7 @@ function renderResults() {
   if (!rows.length) html += semState === 'busy' ? '<div class="empty">Reading meaning…</div>' : '<div class="empty">Nothing found. Try fewer words, or describe what is inside the file.</div>';
   $('rlist').innerHTML = html;
   const cur = $('rlist').querySelector('.cur'); if (cur) cur.scrollIntoView({ block: 'nearest' });
+  if (qlOn && rows[cursor] !== qlFor) { if (canQuick(rows[cursor])) openQuick(rows[cursor]); else closeQuick(); }
 }
 $('rlist').addEventListener('click', e => {
   if (e.target.closest('[data-more]')) { moreSecond = !moreSecond; renderResults(); return; }
@@ -660,7 +662,7 @@ function renderDetail() {
   if (!selHit) { el.hidden = true; return; }
   el.hidden = false;
   const h = selHit, d = selInfo;
-  const acts = isDir => `<div class="acts"><button class="pri" data-a="open_item">OPEN</button><button data-a="reveal_item">FOLDER</button>${isDir ? '<button data-a="vscode_item">VS CODE</button>' : ''}<button data-a="copy">COPY</button></div>`;
+  const acts = isDir => `<div class="acts"><button class="pri" data-a="open_item">OPEN</button><button data-a="preview">PREVIEW</button><button data-a="reveal_item">FOLDER</button>${isDir ? '<button data-a="vscode_item">VS CODE</button>' : ''}<button data-a="copy">COPY</button></div>`;
   if (!h.node) {   // a document the map does not hold
     el.innerHTML = `<div class="nm" dir="auto">${esc(h.name)}</div><div class="pa" dir="auto">${esc(h.path)}</div>
       <dl><dt>SIZE</dt><dd>${fmt(h.size)}</dd><dt>CHANGED</dt><dd>${day(h.mtime)}</dd></dl>${acts(false)}`;
@@ -679,8 +681,62 @@ function renderDetail() {
 }
 $('detail').addEventListener('click', e => {
   const b = e.target.closest('[data-a]'); if (!b || !selHit) return;
+  if (b.dataset.a === 'preview') { openQuick(selHit); return; }
   if (b.dataset.a === 'copy') { const p = selInfo ? selInfo.path : selHit.path; navigator.clipboard.writeText(p || '').then(() => toast('Path copied')); return; }
   act(b.dataset.a, selHit);
+});
+
+// ---------------------------------------------------------------- quick preview
+// Space on a result (after moving to it with the arrows) shows it right here: pictures, PDFs, video
+// and sound straight from disk, text and code, Word / Excel / PowerPoint, a folder's contents. While it
+// is open the arrows flip through the results; Space or Esc closes it.
+let qlOn = false, qlFor = null, listMode = false, qlSeq = 0;
+const QL_IMG = 'jpg jpeg png gif webp bmp svg ico avif'.split(' '), QL_VID = 'mp4 webm mov m4v ogv'.split(' '), QL_AUD = 'mp3 wav ogg m4a flac aac opus'.split(' ');
+const QL_OFFICE = 'docx xlsx xlsm pptx'.split(' ');
+const QL_TEXT = ('txt md csv tsv log ini cfg conf json xml yml yaml toml sql html htm css scss js mjs cjs ts tsx jsx py rs go java kt c h cpp hpp cs php rb swift dart lua ' +
+  'sh bat cmd ps1 psm1 vue svelte env gitignore editorconfig properties gradle csproj sln reg srt vtt').split(' ');
+const hitPath = h => h.path || (h.chain ? pathOf(h.chain) : '');
+const canQuick = h => !!h && !!(h.node || h.path) && h.kind !== K.ROOT && h.kind !== K.DRIVE;
+function toggleQuick() { if (qlOn) closeQuick(); else openQuick(rows[cursor]); }
+function closeQuick() { qlOn = false; qlFor = null; $('ql').hidden = true; $('qlb').innerHTML = ''; }
+async function openQuick(h) {
+  if (!canQuick(h)) return;
+  if (qlOn && qlFor === h) return;
+  qlOn = true; qlFor = h; const my = ++qlSeq;
+  const path = hitPath(h), isDir = h.kind === K.DIR || h.kind === K.TOOL || h.kind === K.LINK;
+  const ext = isDir ? '' : (h.name.split('.').pop() || '').toLowerCase(), src = window.__TAURI__.core.convertFileSrc(path);
+  const meta = isDir ? `${h.node ? num(h.node.count) + ' items · ' : ''}${fmt(h.size)}` : `${fmt(h.size)} · ${day(h.mtime)}`;
+  $('qlh').innerHTML = `<span class="k t" style="color:${tintOf(h)}">${esc(extOf(h.name, h.kind))}</span><div><b dir="auto">${esc(h.name)}</b><small dir="auto">${esc(path)} · ${meta}</small></div>
+    <button type="button" data-ql="open_item">OPEN</button><button type="button" data-ql="reveal_item">FOLDER</button><button type="button" data-ql="close" aria-label="Close preview">×</button>`;
+  const body = $('qlb'), put = html => { if (my === qlSeq) body.innerHTML = html; };
+  $('ql').hidden = false;
+  if (isDir && h.node) {
+    put('<div class="qle">Loading…</div>');
+    try {
+      const items = await invoke('folder_items', { id: h.node.id });
+      put(items.length ? `<div class="qlf">${items.map(c => { const f = c.kind === K.FILE; return `<div><span class="k t">${esc(extOf(c.name, c.kind))}</span><span dir="auto">${esc(c.name)}</span><small>${f ? fmt(c.size) : num(c.count) + ' items'}</small></div>`; }).join('')}</div>` : '<div class="qle">This folder is empty.</div>');
+    } catch (e) { put(`<div class="qle">${esc(String(e))}</div>`); }
+  } else if (QL_IMG.includes(ext)) put(`<img class="qli" src="${src}" alt="">`);
+  else if (ext === 'pdf') put(`<iframe class="qlp" src="${src}#toolbar=0&view=FitH" title="PDF preview"></iframe>`);
+  else if (QL_VID.includes(ext)) put(`<video class="qli" src="${src}" controls autoplay muted></video>`);
+  else if (QL_AUD.includes(ext)) put(`<div class="qle"><audio src="${src}" controls autoplay></audio></div>`);
+  else if (QL_OFFICE.includes(ext)) {
+    put('<div class="qle">Reading…</div>');
+    try {
+      const o = await invoke('preview_office', { path });
+      if (o.kind === 'sheet') put(`<div class="qls"><table>${o.rows.map(r => `<tr>${r.map(c => `<td dir="auto">${esc(c)}</td>`).join('')}</tr>`).join('')}</table></div>`);
+      else if (o.kind === 'slides') put(`<div class="qld">${o.slides.map((s, i) => `<section><i>SLIDE ${i + 1}</i>${s.map(p => `<p dir="auto">${esc(p)}</p>`).join('')}</section>`).join('')}</div>`);
+      else put(`<div class="qld">${o.paras.map(p => `<p dir="auto">${esc(p)}</p>`).join('') || '<p>No text in this document.</p>'}</div>`);
+    } catch (e) { put(`<div class="qle">${esc(String(e))}</div>`); }
+  } else if (QL_TEXT.includes(ext) || !ext.includes(' ') && h.size < 300000 && !/^(exe|dll|msi|zip|rar|7z|iso|bin|dat|db|sys|lnk|doc|xls|ppt|psd|ai|mkv|avi|heic|tif|tiff|raw)$/.test(ext)) {
+    put('<div class="qle">Reading…</div>');
+    try { const t = await invoke('preview_text', { path }); put(`<pre class="qlt" dir="auto">${esc(t.text)}</pre>${t.truncated ? '<div class="qle">Showing the first 300 KB.</div>' : ''}`); }
+    catch (e) { put(`<div class="qle">No preview for this type.<br><small>Enter opens it.</small></div>`); }
+  } else put(`<div class="qle"><span class="big t" style="color:${tintOf(h)}">${esc(extOf(h.name, h.kind))}</span>No preview for this type.<br><small>Enter opens it.</small></div>`);
+}
+$('qlh').addEventListener('click', e => {
+  const b = e.target.closest('[data-ql]'); if (!b || !qlFor) return;
+  if (b.dataset.ql === 'close') closeQuick(); else act(b.dataset.ql, qlFor);
 });
 
 let tt; function toast(m) { const t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, 2400); }
@@ -826,7 +882,7 @@ $('pop').addEventListener('click', async e => {
 });
 
 $('q').addEventListener('input', e => {
-  const v = e.target.value; $('clr').hidden = !v; clearTimeout(deb);
+  const v = e.target.value; $('clr').hidden = !v; clearTimeout(deb); listMode = false; if (qlOn) closeQuick();
   if (!v.trim()) { resetAll(); return; }
   if (!/^\s*[=>]/.test(v)) warmSem();
   deb = setTimeout(() => runQuery(v), 110);
@@ -834,6 +890,8 @@ $('q').addEventListener('input', e => {
 $('q').addEventListener('keydown', e => {
   const n = rows.length;
   const plain = h => !!(h.node || h.path);
+  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && n) listMode = true;
+  if (e.key === ' ' && n && (listMode || qlOn) && canQuick(rows[cursor])) { e.preventDefault(); toggleQuick(); return; }
   if (e.key === 'ArrowDown' && n) { e.preventDefault(); cursor = (cursor + 1) % n; armed = null; hl = plain(rows[cursor]) ? rows[cursor] : null; litVer++; renderResults(); }
   else if (e.key === 'ArrowUp' && n) { e.preventDefault(); cursor = (cursor - 1 + n) % n; armed = null; hl = plain(rows[cursor]) ? rows[cursor] : null; litVer++; renderResults(); }
   else if (e.key === 'Enter' && n) {
@@ -860,6 +918,7 @@ addEventListener('keydown', e => {
   }
 });
 addEventListener('keydown', e => {
+  if (e.key === 'Escape' && qlOn) { closeQuick(); return; }
   if (e.key === 'Escape') { if (!$('pop').hidden) $('pop').hidden = true; else if (sel && hasQuery()) unselect(); else if (hasQuery() || sel) resetAll(); }
   if (e.key === 'F11') { e.preventDefault(); toggleKiosk(); }
   if (e.ctrlKey && e.key.toLowerCase() === 'k') { e.preventDefault(); $('q').focus(); $('q').select(); }
