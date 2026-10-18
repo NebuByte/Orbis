@@ -192,6 +192,19 @@ body.windowed .wc{display:flex}
 .wizbox .sw2:disabled{opacity:.35;cursor:not-allowed}
 .wizbox .bar{grid-column:1 / span 2;height:6px;border-radius:3px;background:color-mix(in srgb,var(--acc) 15%,transparent);overflow:hidden;margin-top:8px}
 .wizbox .bar i{display:block;height:100%;background:var(--acc);transition:width .4s}
+/* time travel: a pill under the date that opens into a slider */
+.tt{position:absolute;left:50%;top:76px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;height:26px;padding:0 4px;border-radius:13px;
+  box-shadow:inset 0 0 0 1px var(--line);background:color-mix(in srgb,var(--panel) 60%,transparent);opacity:.6;transition:opacity .3s}
+.tt:hover,.tt:focus-within,body.travel .tt{opacity:.9}
+.tt button{border:0;background:transparent;color:var(--dim);font:600 9px var(--f-hd);letter-spacing:.2em;cursor:pointer;padding:0 8px;white-space:nowrap}
+.tt button:hover{color:var(--lit)}
+.tt input,.tt span{display:none}
+.tt:hover input,.tt:focus-within input,.tt:hover span,.tt:focus-within span{display:block}
+.tt input{width:220px;accent-color:var(--acc);direction:rtl;cursor:pointer}
+.tt span{font:10px var(--f-mono);color:var(--dim);min-width:130px;padding-right:8px}
+.tth{display:flex;align-items:flex-end;gap:2px;height:46px;padding:6px 10px 0}
+.tth i{flex:1;background:color-mix(in srgb,var(--acc) 55%,transparent);border-radius:2px 2px 0 0;min-height:2px}
+.tthl{display:flex;justify-content:space-between;padding:2px 8px 6px;font:9px var(--f-mono);color:var(--dim)}
 /* quick preview: beside the results, over the map */
 .ql{position:fixed;left:230px;right:398px;top:76px;bottom:96px;z-index:5;display:flex;flex-direction:column;border-radius:12px;overflow:hidden;
   background:color-mix(in srgb,var(--bg) 92%,var(--acc));box-shadow:inset 0 0 0 1px var(--line),0 18px 50px rgba(0,0,0,.45);animation:pvIn .16s ease}

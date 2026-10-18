@@ -557,7 +557,7 @@ async function launch(a) {
 function renderAll() {
   const q = hasQuery();
   document.body.classList.toggle('idle', !q && !sel);
-  $('results').hidden = !q && !sel;
+  $('results').hidden = !q && !sel && !ttMode;
   renderResults(); renderDetail();
 }
 // one result: type (in its colour) | name | readable path | size, date, places, copy tag.
@@ -586,6 +586,7 @@ function semRow(h, i) {
 function renderResults() {
   const q = $('q').value.trim();
   rows = [];
+  if (!q && ttMode && !sel) { renderTravel(); return; }
   if (!q) { $('rh').textContent = sel ? 'SELECTED' : 'RESULTS'; $('rmeta').textContent = ''; $('rlist').innerHTML = ''; return; }
   if (pq.mode === 'calc') {
     let v = null; try { v = calc(pq.text); } catch { /* not a full sum yet */ }
@@ -882,7 +883,7 @@ $('pop').addEventListener('click', async e => {
 });
 
 $('q').addEventListener('input', e => {
-  const v = e.target.value; $('clr').hidden = !v; clearTimeout(deb); listMode = false; if (qlOn) closeQuick();
+  const v = e.target.value; $('clr').hidden = !v; clearTimeout(deb); listMode = false; if (qlOn) closeQuick(); if (ttMode && v.trim()) leaveTravel();
   if (!v.trim()) { resetAll(); return; }
   if (!/^\s*[=>]/.test(v)) warmSem();
   deb = setTimeout(() => runQuery(v), 110);
@@ -913,12 +914,13 @@ addEventListener('keydown', e => {
     q.value = e.key === 'Backspace' ? q.value.slice(0, -1) : q.value + e.key;
     q.setSelectionRange(q.value.length, q.value.length);
     q.dispatchEvent(new Event('input'));
-  } else if (/^(ArrowDown|ArrowUp|Enter)$/.test(e.key) && hasQuery() && !(e.key === 'Enter' && t && t.tagName === 'BUTTON')) {
+  } else if (/^(ArrowDown|ArrowUp|Enter)$/.test(e.key) && (hasQuery() || ttMode) && !(e.key === 'Enter' && t && t.tagName === 'BUTTON')) {
     e.preventDefault(); q.focus(); q.dispatchEvent(new KeyboardEvent('keydown', { key: e.key, bubbles: true }));
   }
 });
 addEventListener('keydown', e => {
   if (e.key === 'Escape' && qlOn) { closeQuick(); return; }
+  if (e.key === 'Escape' && ttMode && !sel) { leaveTravel(); return; }
   if (e.key === 'Escape') { if (!$('pop').hidden) $('pop').hidden = true; else if (sel && hasQuery()) unselect(); else if (hasQuery() || sel) resetAll(); }
   if (e.key === 'F11') { e.preventDefault(); toggleKiosk(); }
   if (e.ctrlKey && e.key.toLowerCase() === 'k') { e.preventDefault(); $('q').focus(); $('q').select(); }
@@ -1385,9 +1387,9 @@ function frame(now) {
   if (cam.fold > .3 && !lit.length && !lite()) {
     const fa = (cam.fold - .3) / .7, placedL = driveLabels().map(d => ({ x: d.x - d.w / 2, y: d.y, w: d.w }));
     g.font = '600 10px Bahnschrift,"Segoe UI",sans-serif'; g.letterSpacing = '1.6px'; g.textBaseline = 'middle';
-    for (const n of landmarks) {
+    for (const n of (ttMode ? ttMode.marks : landmarks)) {
       const v = facing(n); if (v < .72 || !shown(n) || Math.hypot(n.px - (W / 2 + C.ox), n.py - (H / 2 + C.oy)) < coreSize() * 1.45) continue;   // not over the core
-      const t = (n.kind === K.DRIVE ? n.name + '\\' : n.name).toUpperCase(), w = g.measureText(t).width, x = n.px + 9, y = n.py;
+      const t = (n.kind === K.DRIVE ? n.name + '\\' : n.name).toUpperCase() + (ttMode ? ` · ${num(ttMode.counts.get(n.id) || 0)}` : ''), w = g.measureText(t).width, x = n.px + 9, y = n.py;
       if (placedL.some(b => x < b.x + b.w && b.x < x + w && Math.abs(y - b.y) < 13)) continue;
       placedL.push({ x, y, w });
       g.globalAlpha = fa * (v - .72) / .28 * .85; g.fillStyle = n.kind === K.DRIVE ? theme.acc : theme.ink; g.fillText(t, x, y);
@@ -1483,6 +1485,48 @@ $('psaver').onclick = async () => {
 $('psvmin').onclick = e => { const b = e.target.closest('[data-svmin]'); if (b) setPrefs({ saver_minutes: +b.dataset.svmin }); };
 $('psvprev').onclick = () => { $('pop').hidden = true; $('gear').setAttribute('aria-expanded', 'false'); invoke('start_saver'); };
 const deviceName = d => ({ NPU: 'the NPU', GPU: 'the Intel GPU', CPU: 'the CPU' }[d] || 'the best device here');
+
+// ---------------------------------------------------------------- time travel
+// Drag back up to 60 days: the globe glows where files changed that day (the busiest folders named,
+// with how many), and the panel lists that day's files, newest first, with changes per hour.
+let ttMode = null, ttDeb = null, ttSeq = 0;
+const dayStart = d => { const t = new Date(); t.setHours(0, 0, 0, 0); t.setDate(t.getDate() - d); return t; };
+const dayName = d => d === 1 ? 'Yesterday' : dayStart(d).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+async function travel(d) {
+  clearTimeout(ttDeb);
+  if (!d) { leaveTravel(); return; }
+  $('ttlab').textContent = dayName(d); $('ttnow').textContent = '◷ ' + (d === 1 ? 'YESTERDAY' : dayStart(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase());
+  ttDeb = setTimeout(async () => {
+    const my = ++ttSeq, from = dayStart(d), to = new Date(from); to.setDate(to.getDate() + 1);
+    let r; try { r = await invoke('activity', { from: Math.floor(from / 1000), to: Math.floor(to / 1000), tz: -from.getTimezoneOffset() }); } catch (e) { toast(String(e)); return; }
+    if (my !== ttSeq) return;
+    const counts = new Map(r.folders.map(([id, c]) => [id, c])), top = Math.max(1, ...r.folders.map(f => f[1]));
+    const marks = r.folders.map(([id]) => G.get(id)).filter(n => n && n.kind !== K.ROOT && n.kind !== K.DRIVE).slice(0, 10);
+    if (hasQuery() || sel) resetAll();
+    ttMode = { d, total: r.total, hours: r.hours, counts, marks, folders: r.folders.length, files: r.files.map(makeNameHit) };
+    hot = r.folders.map(([id, c]) => G.get(id)).filter(Boolean).slice(0, 40).map(n => ({ n, h: .35 + .65 * Math.log1p(counts.get(n.id)) / Math.log1p(top), ph: hash(n.id, 9) * 6.28 }));
+    cursor = 0; renderAll();
+  }, 140);
+}
+function leaveTravel() {
+  if (!ttMode && $('ttr').value === '0') return;
+  ttMode = null; ttSeq++; $('ttr').value = '0'; $('ttnow').textContent = '◷ NOW'; $('ttlab').textContent = 'Drag back in time';
+  dropExtras([]); computeHeat(); renderAll();
+}
+function renderTravel() {
+  const t = ttMode, maxH = Math.max(1, ...t.hours);
+  $('rh').textContent = dayName(t.d).toUpperCase();
+  $('rmeta').textContent = `${num(t.total)} changes · ${num(t.folders)} folders`;
+  rows = t.files;
+  if (cursor >= rows.length) cursor = 0;
+  $('rlist').innerHTML = `<div class="tth" title="Changes per hour">${t.hours.map((v, i) => `<i style="height:${v ? 8 + 92 * v / maxH : 2}%" title="${String(i).padStart(2, '0')}:00 · ${num(v)}"></i>`).join('')}</div>
+    <div class="tthl"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>`
+    + (rows.length ? rows.map((h, i) => nameRow(h, i)).join('') : '<div class="empty">Nothing changed on this day.</div>');
+  const cur = $('rlist').querySelector('.cur'); if (cur) cur.scrollIntoView({ block: 'nearest' });
+  if (qlOn && rows[cursor] !== qlFor) { if (canQuick(rows[cursor])) openQuick(rows[cursor]); else closeQuick(); }
+}
+$('ttr').addEventListener('input', e => travel(+e.target.value));
+$('ttnow').onclick = () => leaveTravel();
 
 // ---------------------------------------------------------------- news ticker
 // Optional, off by default: headlines from your chosen RSS feeds scroll along the bottom, pausing

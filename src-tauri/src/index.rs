@@ -66,6 +66,8 @@ pub struct Index {
 const NOISE: &[&str] = &[
     ".claude", "worktrees", "bin", "obj", "publish", "dist", "build", "target", ".vs", "packages",
     "testdata", "fuzz", "coverage", "__pycache__", "_duplicates", "$recycle.bin",
+    // package caches and tool caches: downloads, not your work
+    "pub-cache", ".pub-cache", ".cargo", ".gradle", ".m2", ".nuget", ".npm", ".pytest_cache", "cache", ".mypy_cache", ".ruff_cache",
 ];
 
 /// Search filters from the search box: type:pdf  changed:week  in:Projects  big:500mb
@@ -541,15 +543,48 @@ impl Index {
     /// fuller folders one or two levels deeper, each with the time of its newest file change.
     pub fn base_graph(&self) -> Vec<GNode> {
         let recent = self.recent_changes();
-        (0..self.len())
-            .filter(|&i| {
-                let (k, d, c) = (self.kind[i], self.depth[i], self.count[i]);
-                k == K_ROOT
-                    || k == K_DRIVE
-                    || (k == K_DIR && (d <= 3 || (d == 4 && c >= 500) || (d == 5 && c >= 20_000)))
-            })
-            .map(|i| GNode { recent: recent[i], ..self.gnode(i) })
-            .collect()
+        (0..self.len()).filter(|&i| self.is_base(i)).map(|i| GNode { recent: recent[i], ..self.gnode(i) }).collect()
+    }
+    /// the folders the map draws at rest
+    fn is_base(&self, i: usize) -> bool {
+        let (k, d, c) = (self.kind[i], self.depth[i], self.count[i]);
+        k == K_ROOT || k == K_DRIVE || (k == K_DIR && (d <= 3 || (d == 4 && c >= 500) || (d == 5 && c >= 20_000)))
+    }
+
+    /// What changed between `from` and `to` (seconds): how many files changed under each folder of
+    /// the map (counted at the nearest one), the newest of those files, and changes per hour of the
+    /// day (`tz` = minutes east of UTC). Copies and build output (see NOISE) are left out.
+    pub fn activity(&self, from: u32, to: u32, tz: i32, limit: usize) -> (usize, Vec<(u32, u32, u32)>, Vec<(u32, u32)>, Vec<u32>) {
+        let noise = self.noise();
+        let changed: Vec<u32> = (1..self.len())
+            .into_par_iter()
+            .filter(|&i| self.kind[i] == K_FILE && self.mtime[i] >= from && self.mtime[i] < to && !noise[i])
+            .map(|i| i as u32)
+            .collect();
+        let mut folders: std::collections::HashMap<u32, (u32, u32)> = std::collections::HashMap::new();
+        let mut hours = vec![0u32; 24];
+        for &i in &changed {
+            let t = self.mtime[i as usize];
+            hours[(((t as i64 + tz as i64 * 60).rem_euclid(86_400)) / 3600) as usize] += 1;
+            let mut p = self.parent[i as usize];
+            while p != NONE && !self.is_base(p as usize) {
+                p = self.parent[p as usize];
+            }
+            if p != NONE {
+                let e = folders.entry(p).or_insert((0, 0));
+                e.0 += 1;
+                e.1 = e.1.max(t);
+            }
+        }
+        let mut fl: Vec<(u32, u32, u32)> = folders.into_iter().map(|(k, (c, t))| (k, c, t)).collect();
+        fl.sort_by(|a, b| b.1.cmp(&a.1));
+        let mut files: Vec<(u32, u32)> = changed.iter().map(|&i| (i, self.mtime[i as usize])).collect();
+        if files.len() > limit {
+            files.select_nth_unstable_by(limit, |a, b| b.1.cmp(&a.1));
+            files.truncate(limit);
+        }
+        files.sort_by(|a, b| b.1.cmp(&a.1));
+        (changed.len(), fl, files, hours)
     }
 
     /// Newest file mtime inside every node, rolled up from the deepest level. Only files count,

@@ -1083,6 +1083,29 @@ struct Item {
     count: u32,
     mtime: u32,
 }
+#[derive(Serialize)]
+struct ActivityOut {
+    total: usize,
+    /// (folder on the map, files changed under it, newest change)
+    folders: Vec<(u32, u32, u32)>,
+    files: Vec<Hit>,
+    hours: Vec<u32>,
+}
+/// Time travel: what changed in a window of time - for the globe, the list and the day's chart.
+#[tauri::command]
+async fn activity(from: u32, to: u32, tz: i32, s: State<'_, Shared>) -> Result<ActivityOut, String> {
+    let ix = get(&s)?;
+    let (total, folders, files, hours) = ix.activity(from, to, tz, 120);
+    let files = files
+        .into_iter()
+        .map(|(i, _)| {
+            let u = i as usize;
+            Hit { id: i, kind: ix.kind[u], size: ix.size[u], mtime: ix.mtime[u], tooling: ix.is_tooling(u), noisy: ix.is_noise(u), chain: ix.chain(i) }
+        })
+        .collect();
+    Ok(ActivityOut { total, folders: folders.into_iter().take(60).collect(), files, hours })
+}
+
 /// a folder's contents for the quick preview (first 400, folders first)
 #[tauri::command]
 async fn folder_items(id: u32, s: State<'_, Shared>) -> Result<Vec<Item>, String> {
@@ -1419,7 +1442,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            news::news, news::check_feed, news::open_link, preview::preview_text, preview::preview_office, folder_items, scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
+            news::news, news::check_feed, news::open_link, preview::preview_text, preview::preview_office, folder_items, activity, scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
             vscode_item, rebuild, apps_search, apps_top, app_icons, pin_app, run_command, set_autostart, launch_app, sys_stats, set_kiosk, set_theme, quit_app, system_profile, install_engine, update_settings, exit_saver, start_saver,
             win_minimize, win_toggle_maximize, win_hide
         ])
