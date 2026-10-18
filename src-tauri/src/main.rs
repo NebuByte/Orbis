@@ -13,6 +13,7 @@ mod reclaim;
 mod sem;
 mod sys;
 mod watch;
+mod workspaces;
 
 use index::{GNode, Index, Skip, K_FILE, K_LINK, NONE};
 use serde::{Deserialize, Serialize};
@@ -1234,6 +1235,8 @@ fn target(s: &Shared, id: Option<u32>, path: Option<String>) -> Result<String, S
 fn open_item(id: Option<u32>, path: Option<String>, s: State<Shared>) -> Result<(), String> {
     let p = target(&s, id, path)?;
     Command::new("explorer.exe").arg(&p).spawn().map_err(|e| e.to_string())?;
+    let name = Path::new(&p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.clone());
+    workspaces::log(if Path::new(&p).is_dir() { "folder" } else { "file" }, &p, &name);
     Ok(())
 }
 
@@ -1247,14 +1250,20 @@ fn reveal_item(id: Option<u32>, path: Option<String>, s: State<Shared>) -> Resul
 #[tauri::command]
 fn vscode_item(id: Option<u32>, path: Option<String>, s: State<Shared>) -> Result<(), String> {
     let p = target(&s, id, path)?;
+    open_in_vscode(&p)?;
+    workspaces::log("vscode", &p, &Path::new(&p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.clone()));
+    Ok(())
+}
+/// a folder or file in VS Code (the user or machine install, or `code` on PATH)
+fn open_in_vscode(p: &str) -> Result<(), String> {
     let candidates = [
         PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()).join(r"Programs\Microsoft VS Code\Code.exe"),
         PathBuf::from(std::env::var("ProgramFiles").unwrap_or_default()).join(r"Microsoft VS Code\Code.exe"),
     ];
     match candidates.iter().find(|c| c.exists()) {
-        Some(code) => Command::new(code).arg(&p).spawn().map(|_| ()).map_err(|e| e.to_string()),
+        Some(code) => Command::new(code).arg(p).spawn().map(|_| ()).map_err(|e| e.to_string()),
         // installed some other way: the `code` command, if it is on PATH
-        None => Command::new("cmd.exe").args(["/c", "code"]).arg(&p).creation_flags(CREATE_NO_WINDOW).spawn().map(|_| ()).map_err(|_| "VS Code was not found".to_string()),
+        None => Command::new("cmd.exe").args(["/c", "code"]).arg(p).creation_flags(CREATE_NO_WINDOW).spawn().map(|_| ()).map_err(|_| "VS Code was not found".to_string()),
     }
 }
 
@@ -1383,8 +1392,10 @@ fn app_icons(ids: Vec<String>, a: State<apps::Apps>) -> HashMap<String, String> 
 }
 
 #[tauri::command]
-fn launch_app(id: String, a: State<apps::Apps>) -> Result<(), String> {
-    a.launch(&id)
+fn launch_app(id: String, name: Option<String>, a: State<apps::Apps>) -> Result<(), String> {
+    a.launch(&id)?;
+    workspaces::log("app", &id, name.as_deref().unwrap_or(&id));
+    Ok(())
 }
 
 #[tauri::command]
@@ -1507,7 +1518,8 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            news::news, news::check_feed, news::open_link, preview::preview_text, preview::preview_office, folder_items, activity, reclaim_report, recycle_items, drag_out, scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
+            news::news, news::check_feed, news::open_link, preview::preview_text, preview::preview_office, folder_items, activity, reclaim_report, recycle_items, drag_out,
+            workspaces::workspaces, workspaces::save_workspace, workspaces::delete_workspace, workspaces::open_workspace, scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
             vscode_item, rebuild, apps_search, apps_top, app_icons, pin_app, run_command, set_autostart, launch_app, sys_stats, set_kiosk, set_theme, quit_app, system_profile, install_engine, update_settings, exit_saver, start_saver,
             win_minimize, win_toggle_maximize, win_hide
         ])

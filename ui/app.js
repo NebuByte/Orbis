@@ -385,14 +385,21 @@ const COMMANDS = [
   ['sleep', 'Sleep', 1], ['restart', 'Restart', 1], ['shutdown', 'Shut down', 1], ['signout', 'Sign out', 1],
   ...Object.keys(THEMES).map(k => ['theme ' + k, 'Theme: ' + THEMES[k].label]),
 ].map(([key, label, confirm]) => ({ key, label, confirm: !!confirm }));
+let wsCmds = [];   // "> ws <name>" opens a workspace (rebuilt from the saved ones)
+async function loadWsCmds() {
+  try { const o = await invoke('workspaces'); wsCmds = [{ key: 'workspaces', label: 'Workspaces…', confirm: false }, ...o.saved.map(w => ({ key: 'ws ' + w.name.toLowerCase(), label: 'Workspace: ' + w.name, confirm: false, ws: w.name }))]; } catch { /* none yet */ }
+}
 function matchCommands(t) {
-  if (!t) return COMMANDS;
-  return COMMANDS.map(c => { const l = c.label.toLowerCase(); return { c, s: c.key.startsWith(t) || l.startsWith(t) ? 2 : c.key.includes(t) || l.includes(t) ? 1 : 0 }; })
+  const ALL = [...wsCmds, ...COMMANDS];
+  if (!t) return ALL;
+  return ALL.map(c => { const l = c.label.toLowerCase(); return { c, s: c.key.startsWith(t) || l.startsWith(t) ? 2 : c.key.includes(t) || l.includes(t) ? 1 : 0 }; })
     .filter(x => x.s).sort((a, b) => b.s - a.s).map(x => x.c);
 }
 let armed = null;   // a command waiting for its second Enter (sleep, restart, shut down, sign out)
 async function runCmd(c) {
   if (c.key === 'reclaim') { openReclaim(); return true; }
+  if (c.key === 'workspaces') { openWs(); return true; }
+  if (c.ws) { try { const n = await invoke('open_workspace', { name: c.ws }); toast(`Opened ${c.ws} · ${n} item${n === 1 ? '' : 's'}`); } catch (e) { toast(String(e)); } return true; }
   if (c.key.startsWith('theme ')) { applyTheme(c.key.slice(6), true); toast(c.label); return true; }
   if (c.confirm && armed !== c.key) { armed = c.key; renderResults(); return false; }
   armed = null;
@@ -550,7 +557,7 @@ function resetAll() {
 const target = h => h.node ? { id: h.node.id } : { path: h.path };
 async function act(cmd, h) { try { await invoke(cmd, target(h)); } catch (e) { toast(String(e)); } }
 async function launch(a) {
-  try { await invoke('launch_app', { id: a.id }); toast(`Launching ${a.name}`); loadDock(); }
+  try { await invoke('launch_app', { id: a.id, name: a.name }); toast(`Launching ${a.name}`); loadDock(); }
   catch (e) { toast(String(e)); }
 }
 
@@ -678,7 +685,7 @@ function renderDetail() {
   if (!selHit) { el.hidden = true; return; }
   el.hidden = false;
   const h = selHit, d = selInfo;
-  const acts = isDir => `<div class="acts"><button class="pri" data-a="open_item">OPEN</button><button data-a="preview">PREVIEW</button><button data-a="reveal_item">FOLDER</button>${isDir ? '<button data-a="vscode_item">VS CODE</button>' : ''}<button data-a="copy">COPY</button></div>`;
+  const acts = isDir => `<div class="acts"><button class="pri" data-a="open_item">OPEN</button><button data-a="preview">PREVIEW</button><button data-a="ws" title="Add to a workspace">+ WORKSPACE</button><button data-a="reveal_item">FOLDER</button>${isDir ? '<button data-a="vscode_item">VS CODE</button>' : ''}<button data-a="copy">COPY</button></div>`;
   if (!h.node) {   // a document the map does not hold
     el.innerHTML = `<div class="nm" dir="auto">${esc(h.name)}</div><div class="pa" dir="auto">${esc(h.path)}</div>
       <dl><dt>SIZE</dt><dd>${fmt(h.size)}</dd><dt>CHANGED</dt><dd>${day(h.mtime)}</dd></dl>${acts(false)}`;
@@ -693,11 +700,12 @@ function renderDetail() {
     <dt>CHANGED</dt><dd>${day(d.mtime)}</dd>
     ${d.came_from ? `<dt>CAME FROM</dt><dd dir="auto" title="${esc(d.came_from[1])}">${esc(d.came_from[0])}</dd>` : ''}
     ${isFile && src ? `<dt>DOWNLOADED</dt><dd>${esc(src)}</dd>` : ''}</dl>
-    ${h.snip ? `<div class="pa" dir="auto" style="color:var(--ink);opacity:.8">${esc(h.snip)}</div>` : ''}${acts(!isFile)}`;
+    ${h.snip ? `<div class="pa" dir="auto" style="color:var(--ink);opacity:.8">${esc(h.snip)}</div>` : ''}${acts(!isFile)}<div class="wspick"></div>`;
 }
 $('detail').addEventListener('click', e => {
   const b = e.target.closest('[data-a]'); if (!b || !selHit) return;
   if (b.dataset.a === 'preview') { openQuick(selHit); return; }
+  if (b.dataset.a === 'ws') { addToWorkspace(selHit); return; }
   if (b.dataset.a === 'copy') { const p = selInfo ? selInfo.path : selHit.path; navigator.clipboard.writeText(p || '').then(() => toast('Path copied')); return; }
   act(b.dataset.a, selHit);
 });
@@ -920,7 +928,7 @@ $('clr').onclick = () => { resetAll(); $('q').focus(); };
 // screen and the screen saver keep their keys.
 addEventListener('keydown', e => {
   const q = $('q'), t = document.activeElement;
-  if (saverOn || e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey || e.isComposing || t === q || q.disabled || !$('wiz').hidden || !$('scope').hidden || !$('reclaim').hidden) return;
+  if (saverOn || e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey || e.isComposing || t === q || q.disabled || !$('wiz').hidden || !$('scope').hidden || !$('reclaim').hidden || !$('wsd').hidden) return;
   if (t && (t.isContentEditable || /^(TEXTAREA|SELECT)$/.test(t.tagName) || (t.tagName === 'INPUT' && !/^(checkbox|radio|button|submit)$/.test(t.type)))) return;
   if (e.key.length === 1 || e.key === 'Backspace') {
     e.preventDefault();
@@ -1592,6 +1600,62 @@ $('pfeeds').addEventListener('click', e => {
 });
 $('pfeeds').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'feedurl') { e.preventDefault(); addFeed(); } });
 
+// ---------------------------------------------------------------- workspaces
+// What you open together, opened together: "> ws <name>". Orbis suggests groups from what you open
+// from it; "+ WORKSPACE" on a selected file or folder adds it to one.
+let wsd = null;
+const wsKindLabel = { file: 'FILE', folder: 'FOLDER', vscode: 'VS CODE', app: 'APP' };
+async function openWs() {
+  $('pop').hidden = true; $('gear').setAttribute('aria-expanded', 'false');
+  try { wsd = await invoke('workspaces'); } catch (e) { toast(String(e)); return; }
+  renderWs(); $('wsd').hidden = false;
+}
+function renderWs() {
+  const item = (w, i, k, own) => `<span class="wsi" title="${esc(i.target)}"><i>${wsKindLabel[i.kind] || i.kind}</i>${esc(i.name)}${own ? `<button type="button" data-wsrm="${k}" data-wsname="${esc(w.name)}" aria-label="Remove ${esc(i.name)}">×</button>` : ''}</span>`;
+  $('wsbox').innerHTML = `<h1 id="wsT">WORKSPACES</h1>
+    <p class="lead">Things you open together, opened together: type <b>&gt; ws</b> and the name. Add a file or folder with <b>+ WORKSPACE</b> on a selected result.</p>
+    ${wsd.suggested.length ? `<div class="rcs"><div class="rcsh"><b>Suggested</b><span>Opened together more than once</span></div>
+      ${wsd.suggested.map((w, k) => `<div class="rcg"><div class="rcgh"><b dir="auto">${esc(w.name)}</b><button type="button" data-wssave="${k}">SAVE</button></div><div class="wsl">${w.items.map((i, n) => item(w, i, n, false)).join('')}</div></div>`).join('')}</div>` : ''}
+    <div class="rcs"><div class="rcsh"><b>Yours</b><span>${wsd.saved.length ? '' : 'None yet'}</span></div>
+      ${wsd.saved.map(w => `<div class="rcg"><div class="rcgh"><b dir="auto">${esc(w.name)}</b><small>${w.items.length} item${w.items.length === 1 ? '' : 's'}</small>
+        <button type="button" data-wsopen="${esc(w.name)}">OPEN</button><button type="button" data-wsdel="${esc(w.name)}">DELETE</button></div>
+        <div class="wsl">${w.items.map((i, n) => item(w, i, n, true)).join('') || '<small>Empty: add files or folders with + WORKSPACE.</small>'}</div></div>`).join('')}</div>
+    <div class="add"><input id="wsnew" placeholder="New workspace name, e.g. GPS" spellcheck="false" autocomplete="off"><button type="button" data-wsnew>CREATE</button></div>
+    <div class="acts2"><button type="button" data-wsclose>CLOSE</button></div>`;
+}
+async function wsSave(ws) { try { await invoke('save_workspace', { ws }); wsd = await invoke('workspaces'); loadWsCmds(); if (!$('wsd').hidden) renderWs(); } catch (e) { toast(String(e)); } }
+$('pws').onclick = openWs;
+$('wsd').addEventListener('click', async e => {
+  if (!wsd) return;
+  const t = e.target, g = s => t.closest(s);
+  if (g('[data-wsclose]')) { $('wsd').hidden = true; return; }
+  if (g('[data-wssave]')) { const w = wsd.suggested[+g('[data-wssave]').dataset.wssave]; await wsSave(w); toast(`Saved ${w.name}`); return; }
+  if (g('[data-wsopen]')) { const name = g('[data-wsopen]').dataset.wsopen; try { const n = await invoke('open_workspace', { name }); toast(`Opened ${name} · ${n} item${n === 1 ? '' : 's'}`); } catch (err) { toast(String(err)); } return; }
+  if (g('[data-wsdel]')) { await invoke('delete_workspace', { name: g('[data-wsdel]').dataset.wsdel }).catch(err => toast(String(err))); wsd = await invoke('workspaces'); loadWsCmds(); renderWs(); return; }
+  if (g('[data-wsrm]')) { const b = g('[data-wsrm]'), w = wsd.saved.find(x => x.name === b.dataset.wsname); if (w) await wsSave({ name: w.name, items: w.items.filter((_, n) => n !== +b.dataset.wsrm) }); return; }
+  if (g('[data-wsnew]')) { const name = $('wsnew').value.trim(); if (name) await wsSave({ name, items: [] }); }
+});
+$('wsd').addEventListener('keydown', e => { if (e.key === 'Escape') { $('wsd').hidden = true; e.stopPropagation(); } if (e.key === 'Enter' && e.target.id === 'wsnew') { e.preventDefault(); $('wsd').querySelector('[data-wsnew]').click(); } });
+// "+ WORKSPACE" on a selected file or folder
+async function addToWorkspace(h, how) {
+  const path = hitPath(h); if (!path) return;
+  let o; try { o = await invoke('workspaces'); } catch { return; }
+  const box = $('detail').querySelector('.wspick');
+  const isDir = h.kind !== K.FILE;
+  box.innerHTML = `<select id="wspickname">${o.saved.map(w => `<option>${esc(w.name)}</option>`).join('')}<option value="">New workspace…</option></select>
+    <input id="wspicknew" placeholder="Name" spellcheck="false" ${o.saved.length ? 'hidden' : ''}>
+    ${isDir ? '<label><input type="checkbox" id="wspickcode"> in VS Code</label>' : ''}<button type="button" id="wspickgo">ADD</button>`;
+  const sel = $('wspickname'); if (!o.saved.length) sel.value = '';
+  sel.onchange = () => { $('wspicknew').hidden = !!sel.value; };
+  $('wspickgo').onclick = async () => {
+    const name = sel.value || $('wspicknew').value.trim(); if (!name) { toast('Give the workspace a name'); return; }
+    const w = o.saved.find(x => x.name === name) || { name, items: [] };
+    const kind = !isDir ? 'file' : $('wspickcode') && $('wspickcode').checked ? 'vscode' : 'folder';
+    if (!w.items.some(i => i.kind === kind && i.target.toLowerCase() === path.toLowerCase())) w.items.push({ kind, target: path, name: h.name });
+    await wsSave(w); box.innerHTML = ''; toast(`Added to ${name}`);
+  };
+}
+
 // ---------------------------------------------------------------- reclaim space
 // Copies of the same folder or file, big files untouched for a year, old installers in Downloads.
 // Nothing is ticked for you; what you tick goes to the Recycle Bin after a second click.
@@ -2027,7 +2091,7 @@ setInterval(() => { if (G.size) computeHeat(); }, 600000);   // heat ages: re-ra
   if (s) { applyTheme(s.theme, false); kiosk = s.kiosk; renderWin(); if (s.saver_active) setSaver(true); }
   // what this PC can run smoothly: limits for the settings, and anything saved beyond them is brought down
   invoke('system_profile').then(p => { profile = p; computeCaps(); renderPrefs(); clampToCaps(); }).catch(() => {});
-  refreshNews();
+  refreshNews(); loadWsCmds();
   if (s && s.settings && !s.settings.setup_done && !s.saver_active) setTimeout(() => { if (!saverOn) openSetup(true); }, 2200);   // after the map has assembled
   tickStats();
   if (s && s.ready) { loadBase(); return; }

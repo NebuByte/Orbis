@@ -205,6 +205,20 @@ body.windowed .wc{display:flex}
 .tth{display:flex;align-items:flex-end;gap:2px;height:46px;padding:6px 10px 0}
 .tth i{flex:1;background:color-mix(in srgb,var(--acc) 55%,transparent);border-radius:2px 2px 0 0;min-height:2px}
 .tthl{display:flex;justify-content:space-between;padding:2px 8px 6px;font:9px var(--f-mono);color:var(--dim)}
+/* workspaces */
+.wsl{display:flex;flex-wrap:wrap;gap:6px;padding:2px 4px 4px}
+.wsl small{font:11px var(--f-ui);color:var(--dim)}
+.wsi{display:inline-flex;align-items:center;gap:7px;font:11.5px var(--f-ui);color:var(--ink);padding:3px 6px 3px 9px;border-radius:999px;box-shadow:inset 0 0 0 1px var(--line)}
+.wsi i{font:700 8px var(--f-hd);font-style:normal;letter-spacing:.14em;color:var(--dim)}
+.wsi button{border:0;background:transparent;color:var(--dim);cursor:pointer;font-size:13px;line-height:1;padding:0 2px}
+.rcgh button{margin-left:auto;border:0;background:transparent;color:var(--acc);font:600 9px var(--f-hd);letter-spacing:.12em;cursor:pointer;padding:3px 6px}
+.rcgh button+button{margin-left:0}
+.rcgh button:hover{color:var(--lit)}
+.wspick{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.wspick:empty{display:none}
+.wspick select,.wspick input[type=text],.wspick input:not([type]){height:26px;border:0;border-radius:6px;padding:0 8px;background:var(--bg);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line);font:11px var(--f-ui);min-width:0;flex:1}
+.wspick label{font:11px var(--f-ui);color:var(--ink);display:flex;align-items:center;gap:5px}
+.wspick button{height:26px;border:0;border-radius:6px;padding:0 12px;background:var(--acc);color:var(--bg);font:600 9.5px var(--f-hd);letter-spacing:.1em;cursor:pointer}
 /* reclaim space */
 .wizbox .lead b{color:var(--lit)}
 .rcs{margin-top:16px}
