@@ -381,7 +381,7 @@ const COMMANDS = [
   ['settings', 'Settings'], ['wifi', 'Wi-Fi'], ['bluetooth', 'Bluetooth'], ['display', 'Display'], ['sound', 'Sound'],
   ['updates', 'Windows Update'], ['apps', 'Installed apps'], ['storage', 'Storage'], ['power', 'Power & sleep'],
   ['taskmgr', 'Task Manager'], ['control', 'Control Panel'], ['terminal', 'Terminal'], ['recycle', 'Recycle Bin'],
-  ['downloads', 'Downloads'], ['documents', 'Documents'], ['reindex', 'Re-scan drives'], ['lock', 'Lock the PC'],
+  ['downloads', 'Downloads'], ['documents', 'Documents'], ['reindex', 'Re-scan drives'], ['reclaim', 'Reclaim space'], ['lock', 'Lock the PC'],
   ['sleep', 'Sleep', 1], ['restart', 'Restart', 1], ['shutdown', 'Shut down', 1], ['signout', 'Sign out', 1],
   ...Object.keys(THEMES).map(k => ['theme ' + k, 'Theme: ' + THEMES[k].label]),
 ].map(([key, label, confirm]) => ({ key, label, confirm: !!confirm }));
@@ -392,6 +392,7 @@ function matchCommands(t) {
 }
 let armed = null;   // a command waiting for its second Enter (sleep, restart, shut down, sign out)
 async function runCmd(c) {
+  if (c.key === 'reclaim') { openReclaim(); return true; }
   if (c.key.startsWith('theme ')) { applyTheme(c.key.slice(6), true); toast(c.label); return true; }
   if (c.confirm && armed !== c.key) { armed = c.key; renderResults(); return false; }
   armed = null;
@@ -905,7 +906,7 @@ $('clr').onclick = () => { resetAll(); $('q').focus(); };
 // screen and the screen saver keep their keys.
 addEventListener('keydown', e => {
   const q = $('q'), t = document.activeElement;
-  if (saverOn || e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey || e.isComposing || t === q || q.disabled || !$('wiz').hidden || !$('scope').hidden) return;
+  if (saverOn || e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey || e.isComposing || t === q || q.disabled || !$('wiz').hidden || !$('scope').hidden || !$('reclaim').hidden) return;
   if (t && (t.isContentEditable || /^(TEXTAREA|SELECT)$/.test(t.tagName) || (t.tagName === 'INPUT' && !/^(checkbox|radio|button|submit)$/.test(t.type)))) return;
   if (e.key.length === 1 || e.key === 'Backspace') {
     e.preventDefault();
@@ -1576,6 +1577,61 @@ $('pfeeds').addEventListener('click', e => {
   if (e.target.closest('[data-addfeed]')) addFeed();
 });
 $('pfeeds').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'feedurl') { e.preventDefault(); addFeed(); } });
+
+// ---------------------------------------------------------------- reclaim space
+// Copies of the same folder or file, big files untouched for a year, old installers in Downloads.
+// Nothing is ticked for you; what you tick goes to the Recycle Bin after a second click.
+let rc = null;
+async function openReclaim() {
+  $('pop').hidden = true; $('gear').setAttribute('aria-expanded', 'false');
+  rc = { r: null, picked: new Set(), armed: false };
+  $('reclaimbox').innerHTML = '<h1 id="rcT">RECLAIM SPACE</h1><p class="lead">Looking for copies, forgotten big files and old installers…</p>';
+  $('reclaim').hidden = false;
+  try { rc.r = await invoke('reclaim_report'); } catch (e) { toast(String(e)); $('reclaim').hidden = true; rc = null; return; }
+  renderReclaim();
+}
+const rcSize = p => rc.r && [...rc.r.dup_folders, ...rc.r.dup_files].flatMap(g => g.items).concat(rc.r.big_old, rc.r.installers).find(x => x.path === p);
+function renderReclaim() {
+  const r = rc.r, P = rc.picked;
+  const sel = [...P].reduce((s, p) => s + ((rcSize(p) || {}).size || 0), 0);
+  const row = (p, note) => `<label class="rci"><input type="checkbox" data-rc="${esc(p.path)}"${P.has(p.path) ? ' checked' : ''}>
+    <span><b dir="auto" title="${esc(p.path)}">${esc(shortPath(p.path))}</b><small>${fmt(p.size)} · ${day(p.mtime)}${note ? ' · ' + note : ''}</small></span>
+    <button type="button" data-rcshow="${esc(p.path)}" title="Show in Explorer">FOLDER</button></label>`;
+  const groups = (list, what) => list.map(g => `<div class="rcg"><div class="rcgh"><b dir="auto">${esc(g.name)}</b><small>${g.items.length} ${what} of ${fmt(g.size)} · ${fmt(g.wasted)} to free</small></div>
+    ${g.items.map((p, i) => row(p, i === 0 ? 'newest' : '')).join('')}</div>`).join('');
+  const sec = (key, title, why, body, n, extra) => n ? `<div class="rcs"><div class="rcsh"><b>${title}</b><span>${why}</span>${extra ? `<button type="button" data-rcpick="${key}">${extra}</button>` : ''}</div>${body}</div>` : '';
+  $('reclaimbox').innerHTML = `<h1 id="rcT">RECLAIM SPACE</h1>
+    <p class="lead">${r.total ? `Up to <b>${fmt(r.total)}</b> could be freed from copies and old installers. Big untouched files are listed for you to review.` : 'No copies or old installers found.'} Tick what you want gone: it goes to the Recycle Bin, so you can still bring it back.</p>
+    ${sec('dupf', 'Duplicate folders', 'Same name, size and contents in several places', groups(r.dup_folders, 'copies'), r.dup_folders.length, 'TICK EXTRA COPIES')}
+    ${sec('dupfi', 'Duplicate files', 'Same file in several places (contents compared)', groups(r.dup_files, 'copies'), r.dup_files.length, 'TICK EXTRA COPIES')}
+    ${sec('big', 'Big files untouched for a year', 'Over 500 MB, not changed in 12 months', r.big_old.map(p => row(p)).join(''), r.big_old.length)}
+    ${sec('inst', 'Old installers', 'Setup files, disk images and archives in Downloads, over a month old', r.installers.map(p => row(p)).join(''), r.installers.length, 'TICK ALL')}
+    <div class="acts2"><span class="rcsum">${P.size ? `${P.size} ticked · ${fmt(sel)}` : 'Nothing ticked'}</span><button type="button" data-rcact="close">CLOSE</button>
+      <button type="button" class="pri${rc.armed ? ' danger' : ''}" data-rcact="go"${P.size ? '' : ' disabled'}>${rc.armed ? `CLICK AGAIN TO MOVE ${fmt(sel)} TO THE RECYCLE BIN` : 'MOVE TO RECYCLE BIN'}</button></div>`;
+}
+$('preclaim').onclick = openReclaim;
+$('reclaim').addEventListener('change', e => { const c = e.target.closest('[data-rc]'); if (!c || !rc) return; if (c.checked) rc.picked.add(c.dataset.rc); else rc.picked.delete(c.dataset.rc); rc.armed = false; renderReclaim(); });
+$('reclaim').addEventListener('click', async e => {
+  if (!rc || !rc.r) return;
+  const show = e.target.closest('[data-rcshow]'); if (show) { e.preventDefault(); act('reveal_item', { path: show.dataset.rcshow }); return; }
+  const pick = e.target.closest('[data-rcpick]');
+  if (pick) {
+    const k = pick.dataset.rcpick, r = rc.r;
+    if (k === 'dupf' || k === 'dupfi') (k === 'dupf' ? r.dup_folders : r.dup_files).forEach(g => g.items.slice(1).forEach(p => rc.picked.add(p.path)));   // keep the newest copy
+    else r.installers.forEach(p => rc.picked.add(p.path));
+    rc.armed = false; renderReclaim(); return;
+  }
+  const a = e.target.closest('[data-rcact]'); if (!a) return;
+  if (a.dataset.rcact === 'close') { $('reclaim').hidden = true; rc = null; return; }
+  if (!rc.armed) { rc.armed = true; renderReclaim(); return; }
+  a.disabled = true; a.textContent = 'MOVING…';
+  try {
+    const out = await invoke('recycle_items', { paths: [...rc.picked] });
+    toast(`Moved ${out.done} to the Recycle Bin · ${fmt(out.freed)} freed${out.failed.length ? ` · ${out.failed.length} could not be moved` : ''}`);
+  } catch (err) { toast(String(err)); }
+  openReclaim();
+});
+$('reclaim').addEventListener('keydown', e => { if (e.key === 'Escape') { $('reclaim').hidden = true; rc = null; e.stopPropagation(); } });
 
 // ---------------------------------------------------------------- what Orbis searches
 // File types that show in results (instant) and places the scan leaves out (a re-scan). The choices

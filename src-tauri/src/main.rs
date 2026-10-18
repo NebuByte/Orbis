@@ -9,6 +9,7 @@ mod env;
 mod index;
 mod news;
 mod preview;
+mod reclaim;
 mod sem;
 mod sys;
 mod watch;
@@ -1106,6 +1107,54 @@ async fn activity(from: u32, to: u32, tz: i32, s: State<'_, Shared>) -> Result<A
     Ok(ActivityOut { total, folders: folders.into_iter().take(60).collect(), files, hours })
 }
 
+/// Reclaim space: what could be freed (copies, big old files, old installers)
+#[tauri::command]
+async fn reclaim_report(s: State<'_, Shared>) -> Result<reclaim::Report, String> {
+    let ix = get(&s)?;
+    tauri::async_runtime::spawn_blocking(move || reclaim::report(&ix, now() as u32)).await.map_err(|e| e.to_string())
+}
+#[derive(Serialize)]
+struct RecycleOut {
+    done: usize,
+    freed: u64,
+    failed: Vec<String>,
+}
+/// Move the chosen items to the Recycle Bin, then take them out of the index (no re-scan).
+/// Never a whole drive, and never anything inside the places Orbis leaves out (Windows, programs...).
+#[tauri::command]
+async fn recycle_items(paths: Vec<String>, app: AppHandle) -> Result<RecycleOut, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let set = settings_of(&app);
+        let skip: Vec<String> = skip_list(&set).iter().map(|p| p.to_lowercase() + "\\").collect();
+        let s = app.state::<Shared>();
+        let ix = s.idx.read().unwrap().clone().ok_or("index not ready yet")?;
+        let ids = ix.find_paths(&paths);
+        let (mut done, mut freed, mut failed, mut gone) = (0usize, 0u64, Vec::new(), Vec::new());
+        for (k, p) in paths.iter().enumerate() {
+            let low = p.to_lowercase() + "\\";
+            let safe = p.len() > 3 && p.matches('\\').count() >= 2 && !skip.iter().any(|x| low.starts_with(x.as_str())) && ids[k].is_some();
+            if safe && reclaim::recycle(p) {
+                done += 1;
+                freed += ids[k].map(|i| ix.size[i as usize]).unwrap_or(0);
+                gone.push(p.clone());
+            } else {
+                failed.push(p.clone());
+            }
+        }
+        if !gone.is_empty() && !s.building.swap(true, Ordering::SeqCst) {
+            if let Some(next) = ix.reshape(&gone, &[], &Skip::new(&skip_list(&set)), &s.progress) {
+                let _ = next.save(&cache_path());
+                *s.idx.write().unwrap() = Some(Arc::new(next));
+                let _ = app.emit("index-ready", ());
+            }
+            s.building.store(false, Ordering::SeqCst);
+        }
+        Ok(RecycleOut { done, freed, failed })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// a folder's contents for the quick preview (first 400, folders first)
 #[tauri::command]
 async fn folder_items(id: u32, s: State<'_, Shared>) -> Result<Vec<Item>, String> {
@@ -1442,7 +1491,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            news::news, news::check_feed, news::open_link, preview::preview_text, preview::preview_office, folder_items, activity, scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
+            news::news, news::check_feed, news::open_link, preview::preview_text, preview::preview_office, folder_items, activity, reclaim_report, recycle_items, scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
             vscode_item, rebuild, apps_search, apps_top, app_icons, pin_app, run_command, set_autostart, launch_app, sys_stats, set_kiosk, set_theme, quit_app, system_profile, install_engine, update_settings, exit_saver, start_saver,
             win_minimize, win_toggle_maximize, win_hide
         ])
