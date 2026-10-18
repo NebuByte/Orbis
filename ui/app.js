@@ -230,7 +230,7 @@ function corePlane() { g.setTransform(DPR, 0, 0, DPR, (W / 2 + C.ox) * DPR, (H /
 const flat = () => g.setTransform(DPR, 0, 0, DPR, 0, 0);
 function region() {
   const res = !$('results').hidden;
-  return { l: W > 1050 ? 210 : 20, r: W - (res ? 394 : 30), t: 74, b: H - (newsOn() ? 100 : 54) };
+  return { l: W > 1050 ? 210 : 20, r: W - (res ? 394 : 30), t: 74, b: H - 54 };
 }
 function fitTo(pts, pad = 40) {
   if (!pts.length) return;
@@ -246,7 +246,7 @@ const fitAll = () => fitTo([...G.values()].filter(n => n.base && n.depth <= 3));
 // screen saver, to leave the clock and the gauges their own columns)
 function globeView() {
   const side = saverOn ? Math.max(300, Math.min(480, W * .25)) : 210, cy = H / 2 + (saverOn ? 0 : 10);
-  const s = Math.min(1.6, Math.min(W - 2 * side, H - (saverOn ? 70 : 30) - (newsOn() ? 50 : 0)) / (2 * globeR * .92));
+  const s = Math.min(1.6, Math.min(W - 2 * side, H - (saverOn ? 70 : 30)) / (2 * globeR * .92));
   return { x: 0, y: -(cy - H / 2) / s, s };   // x 0: the core sits in the middle of the screen
 }
 function fitGlobe() { view.to = globeView(); }
@@ -1444,7 +1444,7 @@ function renderNews() {
   if ($('news').hidden) return;
   const one = newsItems.map((n, i) => `<a href="#" data-news="${i}" dir="auto"><i>${esc(n.source)}</i>${esc(n.title)}</a><span class="nsep">•</span>`).join('');
   t.innerHTML = one + one;                       // twice, so the loop is seamless
-  requestAnimationFrame(() => { t.style.animationDuration = Math.max(30, t.scrollWidth / 2 / 55) + 's'; });   // ~55 px a second
+  requestAnimationFrame(() => { t.style.animationDuration = Math.max(60, t.scrollWidth / 2 / 26) + 's'; });   // ~26 px a second: time to read
 }
 $('ntrack').addEventListener('click', e => {
   const n = e.target.closest('[data-news]'); if (!n) return;

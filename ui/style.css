@@ -40,7 +40,7 @@ button:focus-visible,.row:focus-visible,input:focus-visible{outline:2px solid va
 .search{position:fixed;right:24px;bottom:40px;width:min(350px,calc(100% - 48px));height:40px;
   display:flex;align-items:center;gap:10px;padding:0 8px 0 15px;border-radius:19px;color:var(--acc);
   background:var(--panel);box-shadow:inset 0 0 0 1px var(--line)}
-.search:focus-within{box-shadow:inset 0 0 0 1px var(--acc),0 0 22px color-mix(in srgb,var(--acc) 20%,transparent)}
+.search:focus-within{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 55%,var(--line))}
 .search input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--lit);font:400 14.5px var(--f-ui);user-select:text}
 .search input::placeholder{color:var(--dim)}
 input[type=search]::-webkit-search-cancel-button{display:none}
@@ -193,12 +193,17 @@ body.windowed .wc{display:flex}
 .wizbox .bar{grid-column:1 / span 2;height:6px;border-radius:3px;background:color-mix(in srgb,var(--acc) 15%,transparent);overflow:hidden;margin-top:8px}
 .wizbox .bar i{display:block;height:100%;background:var(--acc);transition:width .4s}
 /* the news ticker: bottom left, up to the search box */
-.news{position:fixed;left:24px;right:398px;bottom:40px;height:40px;display:flex;align-items:center;gap:12px;padding:0 6px 0 16px;border-radius:20px;
-  background:var(--panel);box-shadow:inset 0 0 0 1px var(--line);z-index:3;overflow:hidden}
-.news>b{font:700 9.5px var(--f-hd);letter-spacing:.26em;color:var(--acc);flex:none}
-.nwin{flex:1;min-width:0;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent)}
-.ntrack{display:inline-flex;align-items:center;white-space:nowrap;animation:ntick 60s linear infinite;will-change:transform}
-.news:hover .ntrack{animation-play-state:paused}
+.news{position:fixed;left:24px;bottom:43px;width:88px;height:34px;display:flex;align-items:center;gap:12px;padding:0 14px;border-radius:17px;
+  background:color-mix(in srgb,var(--panel) 60%,transparent);box-shadow:inset 0 0 0 1px var(--line);z-index:3;overflow:hidden;opacity:.6;cursor:default;
+  transition:width .45s cubic-bezier(.2,.8,.2,1),opacity .3s}
+.news:hover{width:calc(100% - 446px);opacity:.82}
+.news>b{font:700 9px var(--f-hd);letter-spacing:.26em;color:var(--dim);flex:none;display:flex;align-items:center;gap:7px}
+.news>b::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--acc);opacity:.7}
+.nwin{flex:1;min-width:0;overflow:hidden;opacity:0;transition:opacity .3s .15s;-webkit-mask-image:linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent)}
+.news:hover .nwin{opacity:1}
+.ntrack{display:inline-flex;align-items:center;white-space:nowrap;animation:ntick 120s linear infinite;animation-play-state:paused;will-change:transform}
+.news:hover .ntrack{animation-play-state:running}
+.news:has(a:hover) .ntrack{animation-play-state:paused}
 @keyframes ntick{to{transform:translateX(-50%)}}
 .ntrack a{color:var(--ink);text-decoration:none;font:12.5px var(--f-ui)}
 .ntrack a:hover{color:var(--lit);text-decoration:underline}
