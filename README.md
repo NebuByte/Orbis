@@ -18,6 +18,18 @@ Everything runs on your PC. Orbis sends nothing anywhere.
 - **The map.** Your folders form a plexus globe that turns on its own, with each layer turning against
   its neighbours. A search unfolds it into a flat map and draws glowing lines from the core to every
   result.
+- **Space to preview.** Move to a result with the arrows and press Space: pictures, PDFs, video, text and
+  code, Word, Excel and PowerPoint, or a folder's contents, right inside Orbis. The arrows flip through
+  results while it is open.
+- **Ask your documents.** Type a question (*"when is the invoice due?"*) and Orbis reads the best matching
+  documents and shows the passage that answers it, your words highlighted. On the NPU, on your PC.
+- **Time travel.** A slider under the clock goes back up to 60 days: the globe glows where files changed
+  that day, the busiest folders are named, and the day's files are listed with a chart of changes per hour.
+- **Reclaim space.** Duplicate folders and files (contents compared), big files untouched for a year and
+  old installers in Downloads. Nothing is ticked for you, and what you tick goes to the Recycle Bin.
+- **Workspaces.** `> ws gps` opens a whole set at once: folders, folders in VS Code, files and apps. Orbis
+  suggests sets from what you open together.
+- **Drag out.** Drag a result into Explorer, an email or a chat app.
 - **You choose what it searches.** In the settings, *What Orbis searches* lists the common file types by
   group (documents, images, video, audio, archives, apps, design, code), each one switchable, plus your
   own. Only those show in results; folders always do, and `type:xyz` still finds anything. It also
@@ -34,7 +46,7 @@ Everything runs on your PC. Orbis sends nothing anywhere.
   - `type:pdf changed:week in:Projects big:500mb` are filters.
 - **Screen saver (optional).** When the PC sits idle, Orbis takes over the screen with a big clock and the
   turning globe. It first catches up on indexing, then shows the PC's health: processor, memory, drives
-  and battery. Any key, click or mouse movement brings you back.
+  and battery, and a recap of the day: what changed, where, and when. Any key, click or mouse movement brings you back.
 - **In the tray.** Closing the window hides Orbis in the system tray, where it keeps watching for changes
   and stays ready as the screen saver. Click the tray icon to bring it back. Its menu also has Start with
   Windows, Start quietly in the tray, the screen saver, and Exit.

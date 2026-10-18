@@ -159,6 +159,67 @@ def extract(p: Path):
     return ''                                   # .doc/.xls and unreadable files: name and folder only
 
 
+def full_text(p: Path, limit=80000):
+    """The whole readable text of a document (first ~80,000 characters), paragraphs kept."""
+    import html
+    ext = p.suffix.lower()
+    try:
+        if ext == '.pdf':
+            from pypdf import PdfReader
+            out = []
+            for pg in PdfReader(str(p)).pages[:60]:
+                out.append(pg.extract_text() or '')
+                if sum(map(len, out)) > limit:
+                    break
+            return '\n'.join(out)[:limit]
+        if ext in ('.docx', '.pptx', '.xlsx'):
+            with zipfile.ZipFile(p) as z:
+                if ext == '.docx':
+                    names = ['word/document.xml']
+                elif ext == '.pptx':
+                    names = sorted((n for n in z.namelist() if re.match(r'ppt/slides/slide\d+\.xml$', n)), key=lambda n: int(re.findall(r'\d+', n)[-1]))
+                else:
+                    names = ['xl/sharedStrings.xml']
+                parts = []
+                for n in names:
+                    try:
+                        x = z.read(n).decode('utf-8', 'ignore')
+                    except KeyError:
+                        continue
+                    parts.append(html.unescape(TAG.sub('', re.sub(r'</(w:p|a:p|si)>', '\n', x))))
+                return '\n'.join(parts)[:limit]
+        if ext in ('.txt', '.md', '.csv', '.rtf'):
+            with open(p, 'rb') as f:
+                return _decode(f.read(limit * 2))[:limit]
+    except Exception:
+        pass
+    return ''
+
+
+CTRL = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')     # stray control characters from PDF text
+SENT = re.compile(r'(?<=[.!?\u061f])\s+|\n+')
+
+
+def split_passages(text, size=420, most=70):
+    """Sentence-aligned passages of about `size` characters."""
+    out, cur = [], ''
+    for s in (x.strip() for x in SENT.split(text)):
+        if not s:
+            continue
+        if cur and len(cur) + len(s) > size:
+            out.append(cur)
+            cur = ''
+        cur = (cur + ' ' + s).strip()
+        if len(cur) > size * 1.6:
+            out.append(cur[:int(size * 1.6)])
+            cur = ''
+        if len(out) >= most:
+            break
+    if cur and len(out) < most:
+        out.append(cur)
+    return [WS.sub(' ', CTRL.sub(' ', x)) for x in out if len(x) > 30]
+
+
 def passages(p: Path, text: str):
     title = re.sub(r'[_\-.]+', ' ', p.stem)
     where = ' / '.join(p.parent.parts[-2:])
@@ -310,12 +371,33 @@ def serve():
 
     threading.Thread(target=watchdog, daemon=True).start()
     print(json.dumps({'ready': True, 'device': enc.device, 'files': len(st['files'])}), flush=True)
+    penc = []                                   # passages need the long shape: made on first use
+
+    def answer(req):
+        t = time.time()
+        q = enc.encode(['query: ' + req['q']])[0]
+        if not penc:
+            penc.append(Encoder(DEVICE, 1, SEQ))
+        found = []
+        for path in req.get('paths', [])[:2]:
+            chunks = split_passages(full_text(Path(path)))
+            if not chunks:
+                continue
+            v = np.vstack([penc[0].encode(['passage: ' + c]) for c in chunks])
+            s = v @ q
+            i = int(np.argmax(s))
+            found.append({'path': path, 'passage': chunks[i], 'score': round(float(s[i]), 4)})
+        found.sort(key=lambda a: -a['score'])
+        return {'id': req.get('id'), 'ms': round((time.time() - t) * 1000, 1), 'answers': found}
     for line in sys.stdin:
         last[0] = time.time()
         try:
             req = json.loads(line)
             if req.get('quit'):
                 break
+            if req.get('op') == 'passage':
+                print(json.dumps(answer(req), ensure_ascii=False), flush=True)
+                continue
             reload()
             files, owner, mat = st['files'], st['owner'], st['mat']
             t = time.time()

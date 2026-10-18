@@ -519,10 +519,41 @@ async function runDescribe(q, my, filters = null) {
     if (first) first.copies++; else { h.copies = 0; seen.set(k, h); semHits.push(h); }
   }
   numberSem();
+  if (isQuestion(q) && semHits.length) askDocs(q, my); else ans = null;
   const before = lead; decideLead();
   renderAll();
   if (before !== lead || lead === 'sem') showLit();
 }
+// Ask your documents: when the search reads like a question, the best documents are read in full and
+// the passage that answers it is shown on top, the question's words highlighted.
+let ans = null, ansSeq = 0;
+const isQuestion = q => /[?\u061f]\s*$/.test(q) || /^(what|when|where|who|which|how|why|is|are|does|do|can|ما|ماذا|متى|أين|اين|من|كم|كيف|لماذا|هل)\s/i.test(q.trim());
+async function askDocs(q, my) {
+  const top = semHits.filter(h => h.path).slice(0, 2).map(h => h.path);
+  if (!top.length) return;
+  ans = { q, busy: true, list: [] }; renderResults();
+  let r; try { r = await invoke('answer', { q, paths: top }); } catch (e) { ans = null; renderResults(); return; }
+  if (my !== seq) return;
+  ans = { q, busy: false, list: r }; renderResults();
+}
+function markWords(text, q) {
+  const words = q.toLowerCase().split(/[\s,.?\u061f]+/).filter(w => w.length > 2 && !/^(what|when|where|which|does|the|and|for|with|from|that|this|ما|متى|كيف|هل)$/.test(w));
+  let h = esc(text);
+  for (const w of words) h = h.replace(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), m => `<mark>${m}</mark>`);
+  return h;
+}
+function answerCard() {
+  if (!ans || pq.text !== ans.q) return '';
+  if (ans.busy) return '<div class="ans"><i>ANSWER</i><p class="dim">Reading the best documents…</p></div>';
+  const a = ans.list[0]; if (!a) return '';
+  return `<div class="ans" data-ans="0"><i>ANSWER · ${pct(a.score)}% match</i><p dir="auto">${markWords(a.passage, ans.q)}</p>
+    <small dir="auto">${esc(a.path.split('\\').pop())} · <a href="#" data-ansopen="0">open</a> · <a href="#" data-ansshow="0">show in folder</a></small></div>`;
+}
+$('rlist').addEventListener('click', e => {
+  const o = e.target.closest('[data-ansopen],[data-ansshow]'); if (!o || !ans) return;
+  e.preventDefault(); e.stopPropagation();
+  const a = ans.list[0]; act(o.dataset.ansopen != null ? 'open_item' : 'reveal_item', { path: a.path });
+}, true);
 function warmSem() {
   if (!semOn || semState !== 'off') return;
   setSem('busy');
@@ -616,7 +647,7 @@ function renderResults() {
   const L = leadList(), S2 = secondList();
   $('rh').textContent = lead === 'sem' ? 'BY MEANING' : 'BY NAME';
   $('rmeta').textContent = lead === 'sem' ? `${semMs.toFixed(0)} ms on NPU` : `${num(total)} · ${nameMs.toFixed(0)} ms`;
-  let html = pq.chips.length ? `<div class="fchips">${pq.chips.map(c => `<span>${esc(c)}</span>`).join('')}</div>` : '';
+  let html = (pq.chips.length ? `<div class="fchips">${pq.chips.map(c => `<span>${esc(c)}</span>`).join('')}</div>` : '') + answerCard();
   const add = (h, fn) => { const i = rows.length; rows.push(h); return fn(h, i); };
   if (apps.length) { html += '<div class="sec"><span>APPS</span></div>'; apps.forEach(a => { html += add({ app: a }, (x, i) => `<div class="row app${cursor === i ? ' cur' : ''}" data-r="${i}"><span class="k">${iconHtml(a)}</span><span class="n" dir="auto">${esc(a.name)}${a.pinned ? '<i class="pin"></i>' : ''}</span></div>`); }); }
   const rowFn = h => h.src === 'sem' ? semRow : nameRow;

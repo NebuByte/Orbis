@@ -948,6 +948,20 @@ struct DescribeOut {
 }
 
 /// Descriptive search on the NPU: documents ranked by meaning, joined to the map.
+/// Ask your documents: the passage of the best matching documents that answers a question.
+#[tauri::command]
+async fn answer(q: String, paths: Vec<String>, app: AppHandle) -> Result<Vec<sem::Answer>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let set = settings_of(&app);
+        if !set.semantic {
+            return Err("search by meaning is off".into());
+        }
+        app.state::<sem::Sem>().answer(&q, &paths, &set.sem_device)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 async fn describe(q: String, k: usize, app: AppHandle) -> Result<DescribeOut, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1518,7 +1532,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            news::news, news::check_feed, news::open_link, preview::preview_text, preview::preview_office, folder_items, activity, reclaim_report, recycle_items, drag_out,
+            news::news, news::check_feed, news::open_link, preview::preview_text, preview::preview_office, folder_items, activity, reclaim_report, recycle_items, drag_out, answer,
             workspaces::workspaces, workspaces::save_workspace, workspaces::delete_workspace, workspaces::open_workspace, scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
             vscode_item, rebuild, apps_search, apps_top, app_icons, pin_app, run_command, set_autostart, launch_app, sys_stats, set_kiosk, set_theme, quit_app, system_profile, install_engine, update_settings, exit_saver, start_saver,
             win_minimize, win_toggle_maximize, win_hide

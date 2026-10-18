@@ -63,8 +63,17 @@ pub struct SemHit {
 #[derive(Deserialize)]
 struct Reply {
     hits: Option<Vec<SemHit>>,
+    answers: Option<Vec<Answer>>,
     error: Option<String>,
     ms: Option<f64>,
+}
+
+/// The passage of a document that best answers a question.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Answer {
+    pub path: String,
+    pub passage: String,
+    pub score: f32,
 }
 
 /// What the indexer last wrote to status.json, plus whether the engine is installed and running.
@@ -173,6 +182,20 @@ impl Sem {
             }
         }
         Err("descriptive search is not responding".into())
+    }
+
+    /// The passages of these documents that best answer the question (the helper reads them in full).
+    pub fn answer(&self, q: &str, paths: &[String], device: &str) -> Result<Vec<Answer>, String> {
+        let req = serde_json::json!({ "op": "passage", "q": q, "paths": paths }).to_string();
+        let mut g = self.lock();
+        if g.is_none() {
+            *g = Some(Self::spawn(device)?);
+        }
+        let r = Self::ask(g.as_mut().unwrap(), &req)?;
+        match r.error {
+            Some(e) => Err(e),
+            None => Ok(r.answers.unwrap_or_default()),
+        }
     }
 
     /// Start the helper ahead of the first query (model load takes a moment).

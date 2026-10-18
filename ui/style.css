@@ -205,6 +205,15 @@ body.windowed .wc{display:flex}
 .tth{display:flex;align-items:flex-end;gap:2px;height:46px;padding:6px 10px 0}
 .tth i{flex:1;background:color-mix(in srgb,var(--acc) 55%,transparent);border-radius:2px 2px 0 0;min-height:2px}
 .tthl{display:flex;justify-content:space-between;padding:2px 8px 6px;font:9px var(--f-mono);color:var(--dim)}
+/* ask your documents: the answer card on top of the results */
+.ans{margin:4px 6px 8px;padding:10px 12px;border-radius:9px;background:color-mix(in srgb,var(--acc) 8%,transparent);box-shadow:inset 0 0 0 1px var(--line)}
+.ans i{display:block;font:700 9px var(--f-hd);font-style:normal;letter-spacing:.2em;color:var(--acc);margin-bottom:6px}
+.ans p{margin:0 0 6px;font:12.5px/1.55 var(--f-ui);color:var(--lit);user-select:text}
+.ans p.dim{color:var(--dim)}
+.ans mark{background:color-mix(in srgb,var(--acc) 30%,transparent);color:var(--lit);border-radius:3px;padding:0 2px}
+.ans small{font:10.5px var(--f-mono);color:var(--dim)}
+.ans a{color:var(--acc);text-decoration:none}
+.ans a:hover{color:var(--lit)}
 /* workspaces */
 .wsl{display:flex;flex-wrap:wrap;gap:6px;padding:2px 4px 4px}
 .wsl small{font:11px var(--f-ui);color:var(--dim)}
