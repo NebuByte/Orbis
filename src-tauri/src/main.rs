@@ -1155,6 +1155,22 @@ async fn recycle_items(paths: Vec<String>, app: AppHandle) -> Result<RecycleOut,
     .map_err(|e| e.to_string())?
 }
 
+/// Drag results out of Orbis: a real Windows file drag, so they drop into Explorer, mail or chat apps.
+#[tauri::command]
+fn drag_out(paths: Vec<String>, window: WebviewWindow) -> Result<(), String> {
+    let files: Vec<PathBuf> = paths.iter().map(PathBuf::from).filter(|p| p.is_absolute() && p.exists()).collect();
+    if files.is_empty() {
+        return Err("Nothing to drag: the file is not there any more.".into());
+    }
+    let w = window.clone();
+    window
+        .run_on_main_thread(move || {
+            let icon = drag::Image::Raw(include_bytes!("../icons/icon.png").to_vec());
+            let _ = drag::start_drag(&w, drag::DragItem::Files(files), icon, |_, _| {}, drag::Options::default());
+        })
+        .map_err(|e| e.to_string())
+}
+
 /// a folder's contents for the quick preview (first 400, folders first)
 #[tauri::command]
 async fn folder_items(id: u32, s: State<'_, Shared>) -> Result<Vec<Item>, String> {
@@ -1491,7 +1507,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            news::news, news::check_feed, news::open_link, preview::preview_text, preview::preview_office, folder_items, activity, reclaim_report, recycle_items, scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
+            news::news, news::check_feed, news::open_link, preview::preview_text, preview::preview_office, folder_items, activity, reclaim_report, recycle_items, drag_out, scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
             vscode_item, rebuild, apps_search, apps_top, app_icons, pin_app, run_command, set_autostart, launch_app, sys_stats, set_kiosk, set_theme, quit_app, system_profile, install_engine, update_settings, exit_saver, start_saver,
             win_minimize, win_toggle_maximize, win_hide
         ])

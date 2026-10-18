@@ -25,6 +25,8 @@ ureq = { version = "2", default-features = false, features = ["json", "native-tl
 native-tls = "0.2"
 # quick preview of Word / Excel / PowerPoint files (they are zip archives)
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# drag results out of Orbis into Explorer, mail, chat apps (a real Windows file drag)
+drag = "2"
 
 [profile.release]
 opt-level = 3

@@ -643,7 +643,21 @@ function renderResults() {
   const cur = $('rlist').querySelector('.cur'); if (cur) cur.scrollIntoView({ block: 'nearest' });
   if (qlOn && rows[cursor] !== qlFor) { if (canQuick(rows[cursor])) openQuick(rows[cursor]); else closeQuick(); }
 }
+// drag a result out of Orbis (into Explorer, an email, WhatsApp...): press, move a few pixels, drop
+let dragOut = null, dragged = false;
+$('rlist').addEventListener('pointerdown', e => {
+  const r = e.target.closest('[data-r]'), h = r && rows[+r.dataset.r];
+  dragOut = e.button === 0 && h && (h.node || h.path) && h.kind !== K.ROOT && h.kind !== K.DRIVE ? { x: e.clientX, y: e.clientY, h } : null;
+  dragged = false;
+});
+$('rlist').addEventListener('pointermove', e => {
+  if (!dragOut || !(e.buttons & 1) || Math.hypot(e.clientX - dragOut.x, e.clientY - dragOut.y) < 8) return;
+  const h = dragOut.h; dragOut = null; dragged = true;
+  invoke('drag_out', { paths: [hitPath(h)] }).catch(err => toast(String(err)));
+});
+addEventListener('pointerup', () => { dragOut = null; });
 $('rlist').addEventListener('click', e => {
+  if (dragged) { dragged = false; return; }   // that was a drag, not a click
   if (e.target.closest('[data-more]')) { moreSecond = !moreSecond; renderResults(); return; }
   const dp = e.target.closest('[data-dupes]');
   if (dp) { const h = rows[+dp.dataset.dupes]; if (openDupes.has(h)) openDupes.delete(h); else openDupes.add(h); renderResults(); return; }
