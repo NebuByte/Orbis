@@ -256,10 +256,15 @@ impl Index {
     }
 
     fn push(&mut self, name: &str, parent: u32, kind: u8, size: u64, mtime: u32, depth: u8) -> u32 {
+        self.push_norm(name, &normalize(name), parent, kind, size, mtime, depth)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn push_norm(&mut self, name: &str, norm: &str, parent: u32, kind: u8, size: u64, mtime: u32, depth: u8) -> u32 {
         let id = self.parent.len() as u32;
         self.names.push_str(name);
         self.name_end.push(self.names.len() as u32);
-        self.norm.push_str(&normalize(name));
+        self.norm.push_str(norm);
         self.norm_end.push(self.norm.len() as u32);
         self.parent.push(parent);
         self.kind.push(kind);
@@ -267,6 +272,61 @@ impl Index {
         self.mtime.push(mtime);
         self.depth.push(depth);
         id
+    }
+
+    /// The same index with some folders left out and others taken back in - no re-scan of the
+    /// drives. Left-out folders (and everything inside) are dropped; folders taken back in are read
+    /// from disk and grafted under their parents; sizes, counts and the map layout are worked out
+    /// again. None when a folder taken back in has no parent in the index (the caller re-scans).
+    pub fn reshape(&self, drop: &[String], add: &[String], skip: &Skip, prog: &AtomicU64) -> Option<Index> {
+        let n = self.len();
+        let mut gone = vec![false; n];
+        for id in self.find_paths(drop).into_iter().flatten() {
+            gone[id as usize] = true;
+        }
+        for i in 1..n {
+            let p = self.parent[i];
+            if p != NONE && gone[p as usize] {
+                gone[i] = true; // children always come after their parents
+            }
+        }
+        // folders taken back in: under which mapped folder (or drive) each one goes, then read it
+        let already = self.find_paths(add);
+        let mut grafts: Vec<(u32, Raw)> = Vec::new();
+        for (k, path) in add.iter().enumerate() {
+            if already[k].is_some() || !Path::new(path).is_dir() {
+                continue;
+            }
+            let (parent_path, name) = path.rsplit_once('\\')?;
+            let parent = if parent_path.len() <= 2 {
+                (1..n).find(|&i| self.kind[i] == K_DRIVE && self.name(i).eq_ignore_ascii_case(parent_path)).map(|i| i as u32)
+            } else {
+                self.find_paths(&[parent_path.to_string()])[0]
+            }?;
+            if gone[parent as usize] {
+                continue; // it sits inside a place that is left out now
+            }
+            let p = Path::new(path);
+            let mtime = fs::metadata(p).ok().and_then(|m| m.modified().ok()).map(unix).unwrap_or(0);
+            grafts.push((parent, Raw { name: name.to_string(), kind: K_DIR, size: 0, mtime, inside: 0, kids: walk(p, prog, skip) }));
+        }
+        let mut ix = Index { version: VERSION, built_at: self.built_at, name_end: vec![0], norm_end: vec![0], ..Default::default() };
+        let mut map = vec![NONE; n];
+        let mut inside: Vec<u32> = Vec::with_capacity(n);
+        for i in 0..n {
+            if gone[i] {
+                continue;
+            }
+            let (k, p) = (self.kind[i], self.parent[i]);
+            let own = if k == K_FILE || k == K_COLLAPSED { self.size[i] } else { 0 }; // folders roll up again
+            map[i] = ix.push_norm(self.name(i), self.norm_name(i), if p == NONE { NONE } else { map[p as usize] }, k, own, self.mtime[i], self.depth[i]);
+            inside.push(if k == K_COLLAPSED { self.count[i] } else { 0 });
+        }
+        for (parent, raw) in grafts {
+            ix.flatten(raw, map[parent as usize], self.depth[parent as usize].saturating_add(1), &mut inside);
+        }
+        ix.finish(&inside);
+        Some(ix)
     }
 
     fn flatten(&mut self, r: Raw, parent: u32, depth: u8, inside: &mut Vec<u32>) {

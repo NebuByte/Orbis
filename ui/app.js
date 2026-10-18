@@ -1452,7 +1452,7 @@ function renderScope() {
         <div class="exts">${own.map(e => `<span class="ext own">${esc(e)}<button type="button" data-rmext="${esc(e)}" aria-label="Remove ${esc(e)}"${off}>×</button></span>`).join('')}
           <span class="addx"><input id="scext" placeholder="e.g. sldprt, .cr2" spellcheck="false" autocomplete="off"${off}><button type="button" data-addext${off}>ADD</button></span></div></div></div>
     <div class="opt"><b>Places to leave out</b><span></span>
-      <small>The scan skips these folders, so they never fill the map or your results. Changing them re-scans your drives once. The Recycle Bin and System Volume Information are always left out.</small></div>
+      <small>These folders stay out of the map and your results. Leaving one out removes it from the index straight away, with no re-scan; taking one back in reads only that folder. The Recycle Bin and System Volume Information are always left out.</small></div>
     <div class="plist">${o.places.map(p => `<label class="place"><input type="checkbox" data-place="${p.key}"${s.places.has(p.key) ? ' checked' : ''}><span><b>${esc(p.label)}</b><small>${esc(p.paths.join(' · ') || 'not on this PC')}</small></span></label>`).join('')}
       ${s.custom.map((c, i) => `<div class="place own"><span><b>${esc(c)}</b><small>your folder</small></span><button type="button" data-rmplace="${i}" aria-label="Stop leaving out ${esc(c)}">×</button></div>`).join('')}</div>
     <div class="add"><input id="scplace" placeholder="Leave out another folder, e.g. D:\\Games" spellcheck="false" autocomplete="off"><button type="button" data-addplace>ADD</button></div>
@@ -1476,7 +1476,7 @@ async function applyScope() {
   const s = scope, places = [...s.places].sort(), moved = JSON.stringify(places) + JSON.stringify(s.custom) !== s.before;
   await setPrefs({ all_types: s.all, types: [...s.types].sort(), skip_places: places, skip_custom: s.custom });
   $('scope').hidden = true; scope = null;
-  toast(moved ? 'Saved. Re-scanning your drives without those places…' : 'Saved');
+  toast(moved ? 'Saved. Updating the index…' : 'Saved');
   if (hasQuery()) runQuery($('q').value);
 }
 $('pscope').onclick = openScope;
@@ -1771,6 +1771,10 @@ async function loadBase() {
 listen('index-progress', e => { scannedNow = e.payload; $('ovS').textContent = `${num(e.payload)} items scanned`; });
 // a scan walks more entries than the map keeps, so progress is measured against the last full scan
 const scanTotal = () => { try { return +localStorage.getItem('orbis.scanTotal') || 0; } catch { return 0; } };
+listen('index-reshaped', e => {
+  const [was, now, secs] = e.payload, d = now - was;
+  toast(`${d < 0 ? `Left out ${num(-d)} items` : `Added back ${num(d)} items`} · no re-scan · ${secs.toFixed(1)} s`);
+});
 listen('index-built', e => {
   try { if (scannedNow) localStorage.setItem('orbis.scanTotal', String(scannedNow)); } catch {}
   scannedNow = 0;

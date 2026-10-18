@@ -723,6 +723,41 @@ fn start_index(app: AppHandle, force: bool) {
     });
 }
 
+/// Places left out or taken back in: the index is changed in place - what is left out now is
+/// removed, and only folders taken back in are read from disk - instead of re-scanning the drives.
+fn reshape_index(app: AppHandle, before: &Settings, after: &Settings) {
+    let (old, new) = (skip_list(before), skip_list(after));
+    let low = |v: &[String]| v.iter().map(|p| p.to_lowercase()).collect::<std::collections::HashSet<String>>();
+    let (old_l, new_l) = (low(&old), low(&new));
+    let drop: Vec<String> = new.iter().filter(|p| !old_l.contains(&p.to_lowercase())).cloned().collect();
+    let add: Vec<String> = old.iter().filter(|p| !new_l.contains(&p.to_lowercase())).cloned().collect();
+    if app.state::<Shared>().building.swap(true, Ordering::SeqCst) {
+        return; // a scan is running; the next start notices the settings changed (index.scope)
+    }
+    let after = after.clone();
+    std::thread::spawn(move || {
+        let s = app.state::<Shared>();
+        let t = Instant::now();
+        let cur = s.idx.read().unwrap().clone();
+        let was = cur.as_ref().map(|ix| ix.len()).unwrap_or(0);
+        match cur.and_then(|ix| ix.reshape(&drop, &add, &Skip::new(&new), &s.progress)) {
+            Some(ix) => {
+                let now_len = ix.len();
+                let _ = ix.save(&cache_path());
+                let _ = std::fs::write(scope_file(), scope_print(&after));
+                *s.idx.write().unwrap() = Some(Arc::new(ix));
+                s.building.store(false, Ordering::SeqCst);
+                let _ = app.emit("index-reshaped", (was, now_len, t.elapsed().as_secs_f32()));
+                let _ = app.emit("index-ready", ());
+            }
+            None => {
+                s.building.store(false, Ordering::SeqCst);
+                start_index(app, true); // could not place a folder taken back in: scan everything
+            }
+        }
+    });
+}
+
 // ---------------------------------------------------------------- "came from" history
 
 /// Minimal CSV line reader: quoted fields, "" as an escaped quote.
@@ -990,8 +1025,10 @@ fn update_settings(patch: serde_json::Value, app: AppHandle) -> Result<Settings,
             watch::start(app.clone(), live_roots(&after));
         }
     }
-    if after.drives != before.drives || skip_list(&after) != skip_list(&before) {
-        start_index(app.clone(), true); // a re-scan with the new drives / places left out
+    if after.drives != before.drives {
+        start_index(app.clone(), true); // other drives: a full scan
+    } else if skip_list(&after) != skip_list(&before) {
+        reshape_index(app.clone(), &before, &after); // places only: change the index itself
     }
     if after.saver != before.saver || (after.saver && after.saver_minutes != before.saver_minutes) {
         apply_screensaver(after.saver, after.saver_minutes)?;
