@@ -363,6 +363,10 @@ body.saver,body.saver *{cursor:none!important}
 .sv-spark polygon{fill:color-mix(in srgb,var(--acc) 12%,transparent)}
 .sv-spark span,.sv-meta{font:600 9px var(--f-hd);letter-spacing:.24em;color:var(--dim)}
 .sv-meta{line-height:1.8}
+.sv-today p{margin:0 0 6px;font:12px/1.5 var(--f-ui);color:var(--ink)}
+.sv-today b{color:var(--lit);font-weight:600}
+.sv-today .tth{padding:4px 0 0;height:40px}
+.sv-today .tthl{padding:2px 0 0}
 .stg{display:grid;gap:6px}
 .stg-h{display:flex;justify-content:space-between;align-items:baseline;font:700 10px var(--f-hd);letter-spacing:.24em;color:var(--acc)}
 .stg-h b{font:400 11px var(--f-mono);letter-spacing:0;color:var(--lit)}

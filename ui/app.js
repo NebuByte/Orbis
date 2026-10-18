@@ -1909,7 +1909,7 @@ function setSaver(on) {
     $('pop').hidden = true;
     saverT0 = performance.now(); saverPt = null;
     let n = 0;
-    svTick = setInterval(() => { tickClock(); renderSaver(); if (++n % 3 === 0) refreshStatus(); }, 1000);
+    svTick = setInterval(() => { tickClock(); renderSaver(); if (++n % 3 === 0) refreshStatus(); if (n % 60 === 0) recap(); }, 1000);
     tickClock(); refreshStatus().then(renderSaver);
   } else { $('q').focus(); }
   if (drift.on) fitGlobe();
@@ -1924,6 +1924,17 @@ addEventListener('pointermove', e => {
   if (!saverPt) { saverPt = [e.screenX, e.screenY]; return; }
   if (Math.hypot(e.screenX - saverPt[0], e.screenY - saverPt[1]) > 12) endSaver();   // not the odd twitch
 }, true);
+// the day so far, on the health screen: how much changed, where most, and when (from time travel's data)
+async function recap() {
+  const el = $('svToday'); if (!el) return;
+  const from = dayStart(0);
+  let r; try { r = await invoke('activity', { from: Math.floor(from / 1000), to: Math.floor(Date.now() / 1000) + 60, tz: -from.getTimezoneOffset() }); } catch { return; }
+  const top = r.folders.map(([id]) => G.get(id)).filter(n => n && n.kind !== K.ROOT && n.kind !== K.DRIVE).map(n => n.name).filter((v, i, all) => all.indexOf(v) === i).slice(0, 3);
+  const maxH = Math.max(1, ...r.hours), now = new Date().getHours();
+  el.innerHTML = r.total ? `<p><b>${num(r.total)}</b> files changed in <b>${num(r.folders.length)}</b> folders${top.length ? ` · busiest: <b dir="auto">${esc(top.join(', '))}</b>` : ''}</p>
+    <div class="tth">${r.hours.map((v, i) => `<i style="height:${v ? 8 + 92 * v / maxH : 2}%;opacity:${i > now ? .25 : 1}"></i>`).join('')}</div>
+    <div class="tthl"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>` : '<p>A quiet day so far: no files changed.</p>';
+}
 const RING = 251.3;
 const gauge = (k, label, big) => `<div class="gg${big ? ' big' : ''}" data-g="${esc(k)}"><div class="ring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle class="tk" cx="50" cy="50" r="48"/><circle class="trk" cx="50" cy="50" r="40"/><circle class="val" cx="50" cy="50" r="40" transform="rotate(-90 50 50)"/></svg><b></b></div><span class="gl">${esc(label)}</span><small></small></div>`;
 function setGauge(k, p, val, subText, warn) {
@@ -1954,7 +1965,9 @@ function renderSaver() {
          <div class="sv-spark"><svg viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><polygon/><polyline/></svg><span>PROCESSOR · LAST 3 MINUTES</span></div>
          <div class="sv-lbl">DRIVES${S && S.battery != null ? ' & POWER' : ''}</div>
          <div class="sv-small">${S ? S.drives.map(d => gauge('d' + d.name, d.name)).join('') + (S.battery != null ? gauge('pwr', 'BATTERY') : '') : ''}</div>
+         <div class="sv-lbl">TODAY</div><div class="sv-today" id="svToday">…</div>
          <div class="sv-meta" id="svMeta"></div>`;
+    recap();
   }
   if (phase !== 'health') {
     const scanned = scannedNow || st.scanned || 0, total = scanTotal();
