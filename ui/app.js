@@ -230,7 +230,7 @@ function corePlane() { g.setTransform(DPR, 0, 0, DPR, (W / 2 + C.ox) * DPR, (H /
 const flat = () => g.setTransform(DPR, 0, 0, DPR, 0, 0);
 function region() {
   const res = !$('results').hidden;
-  return { l: W > 1050 ? 210 : 20, r: W - (res ? 394 : 30), t: 74, b: H - 54 };
+  return { l: W > 1050 ? 210 : 20, r: W - (res ? 394 : 30), t: 74, b: H - (newsOn() ? 100 : 54) };
 }
 function fitTo(pts, pad = 40) {
   if (!pts.length) return;
@@ -244,11 +244,12 @@ function fitTo(pts, pad = 40) {
 const fitAll = () => fitTo([...G.values()].filter(n => n.base && n.depth <= 3));
 // the globe fills nearly the whole height, in the middle of the screen (a little smaller as the
 // screen saver, to leave the clock and the gauges their own columns)
-function fitGlobe() {
-  const side = saverOn ? Math.max(300, Math.min(480, W * .25)) : 210, cx = W / 2, cy = H / 2 + (saverOn ? 0 : 10);
-  const s = Math.min(1.6, Math.min(W - 2 * side, H - (saverOn ? 70 : 30)) / (2 * globeR * .92));
-  view.to = { x: -(cx - W / 2) / s, y: -(cy - H / 2) / s, s };
+function globeView() {
+  const side = saverOn ? Math.max(300, Math.min(480, W * .25)) : 210, cy = H / 2 + (saverOn ? 0 : 10);
+  const s = Math.min(1.6, Math.min(W - 2 * side, H - (saverOn ? 70 : 30) - (newsOn() ? 50 : 0)) / (2 * globeR * .92));
+  return { x: 0, y: -(cy - H / 2) / s, s };   // x 0: the core sits in the middle of the screen
 }
+function fitGlobe() { view.to = globeView(); }
 function resize() {
   DPR = Math.min(1.5, devicePixelRatio || 1); W = innerWidth; H = innerHeight;
   fx.width = Math.round(W * DPR); fx.height = Math.round(H * DPR);
@@ -1263,6 +1264,8 @@ function frame(now) {
   }
   if (!drift.on && G.size && !searching() && !sel) startDrift();
   else if (drift.on && (searching() || sel)) stopDrift();
+  // while the globe turns, it stays framed in the middle - whatever framing a search left behind
+  if (drift.on) { const t = globeView(), c = view.to || view; if (Math.abs(c.x - t.x) > .5 || Math.abs(c.y - t.y) > .5 || Math.abs(c.s - t.s) > 1e-3) view.to = t; }
   stepCamera(dt);
   camFrame();
   for (const n of G.values()) project(n);
@@ -1394,6 +1397,7 @@ function renderPrefs() {
   $('psaver').setAttribute('aria-pressed', String(!!S.saver)); $('psaver').textContent = 'Screen saver: ' + (S.saver ? `ON · after ${S.saver_minutes} min` : 'OFF');
   $('psvmin').hidden = !S.saver;
   document.querySelectorAll('[data-svmin]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.svmin === S.saver_minutes)));
+  renderFeeds();
   $('plive').setAttribute('aria-pressed', String(!!S.live)); $('plive').textContent = 'Live activity: ' + (S.live ? 'ON' : 'OFF');
   $('psem').setAttribute('aria-pressed', String(!!(S.semantic && e.available)));
   $('psem').disabled = !caps.sem && !S.semantic; $('psem').title = caps.sem ? '' : caps.why.sem;
@@ -1420,6 +1424,55 @@ $('psaver').onclick = async () => {
 $('psvmin').onclick = e => { const b = e.target.closest('[data-svmin]'); if (b) setPrefs({ saver_minutes: +b.dataset.svmin }); };
 $('psvprev').onclick = () => { $('pop').hidden = true; $('gear').setAttribute('aria-expanded', 'false'); invoke('start_saver'); };
 const deviceName = d => ({ NPU: 'the NPU', GPU: 'the Intel GPU', CPU: 'the CPU' }[d] || 'the best device here');
+
+// ---------------------------------------------------------------- news ticker
+// Optional, off by default: headlines from your chosen RSS feeds scroll along the bottom, pausing
+// under the mouse; a click opens the story in your browser. Fetched only while on, every 15 minutes.
+const NEWS_EVERY = 15 * 60 * 1000;
+let newsItems = [], newsTimer = null;
+const newsOn = () => setting('news', false) && W > 1050;
+async function refreshNews() {
+  clearTimeout(newsTimer);
+  if (!setting('news', false)) { newsItems = []; $('news').hidden = true; return; }
+  try { newsItems = await invoke('news', { feeds: setting('news_feeds', []) }); } catch { /* offline: keep what we had */ }
+  renderNews();
+  newsTimer = setTimeout(refreshNews, NEWS_EVERY);
+}
+function renderNews() {
+  const t = $('ntrack');
+  $('news').hidden = !setting('news', false) || !newsItems.length;
+  if ($('news').hidden) return;
+  const one = newsItems.map((n, i) => `<a href="#" data-news="${i}" dir="auto"><i>${esc(n.source)}</i>${esc(n.title)}</a><span class="nsep">•</span>`).join('');
+  t.innerHTML = one + one;                       // twice, so the loop is seamless
+  requestAnimationFrame(() => { t.style.animationDuration = Math.max(30, t.scrollWidth / 2 / 55) + 's'; });   // ~55 px a second
+}
+$('ntrack').addEventListener('click', e => {
+  const n = e.target.closest('[data-news]'); if (!n) return;
+  e.preventDefault(); invoke('open_link', { url: newsItems[+n.dataset.news].link }).catch(err => toast(String(err)));
+});
+function renderFeeds() {
+  const on = setting('news', false), feeds = setting('news_feeds', []);
+  $('pnews').setAttribute('aria-pressed', String(on)); $('pnews').textContent = 'News ticker: ' + (on ? 'ON' : 'OFF');
+  $('pfeeds').innerHTML = !on ? '' : `<div class="feeds">${feeds.map((f, i) => `<span class="feed" title="${esc(f)}">${esc(hostName(f))}<button type="button" data-rmfeed="${i}" aria-label="Remove ${esc(f)}">×</button></span>`).join('')}</div>
+    <div class="wkey"><input id="feedurl" placeholder="Add a feed: https://…/rss" spellcheck="false" autocomplete="off"><button type="button" data-addfeed>ADD</button></div>`;
+}
+const hostName = u => { try { return new URL(u).hostname.replace(/^(www|feeds|rss)\./, ''); } catch { return u; } };
+async function addFeed() {
+  const url = $('feedurl').value.trim(); if (!url) return;
+  const btn = $('pfeeds').querySelector('[data-addfeed]'); btn.textContent = 'CHECKING…'; btn.disabled = true;
+  try {
+    const name = await invoke('check_feed', { url });
+    await setPrefs({ news_feeds: [...setting('news_feeds', []).filter(f => f !== url), url] });
+    toast(`Added ${name}`); refreshNews();
+  } catch (e) { toast(String(e)); btn.textContent = 'ADD'; btn.disabled = false; }
+}
+$('pnews').onclick = () => setPrefs({ news: !setting('news', false) }).then(() => { refreshNews(); if (drift.on) fitGlobe(); });
+$('pfeeds').addEventListener('click', e => {
+  const r = e.target.closest('[data-rmfeed]');
+  if (r) { setPrefs({ news_feeds: setting('news_feeds', []).filter((_, i) => i !== +r.dataset.rmfeed) }).then(refreshNews); return; }
+  if (e.target.closest('[data-addfeed]')) addFeed();
+});
+$('pfeeds').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'feedurl') { e.preventDefault(); addFeed(); } });
 
 // ---------------------------------------------------------------- what Orbis searches
 // File types that show in results (instant) and places the scan leaves out (a re-scan). The choices
@@ -1788,6 +1841,7 @@ setInterval(() => { if (G.size) computeHeat(); }, 600000);   // heat ages: re-ra
   if (s) { applyTheme(s.theme, false); kiosk = s.kiosk; renderWin(); if (s.saver_active) setSaver(true); }
   // what this PC can run smoothly: limits for the settings, and anything saved beyond them is brought down
   invoke('system_profile').then(p => { profile = p; computeCaps(); renderPrefs(); clampToCaps(); }).catch(() => {});
+  refreshNews();
   if (s && s.settings && !s.settings.setup_done && !s.saver_active) setTimeout(() => { if (!saverOn) openSetup(true); }, 2200);   // after the map has assembled
   tickStats();
   if (s && s.ready) { loadBase(); return; }

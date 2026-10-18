@@ -20,6 +20,9 @@ base64 = "0.22"
 notify = "6.1"
 dirs = "5"
 tauri-plugin-single-instance = "2"
+# the optional news ticker reads RSS feeds, over Windows' own TLS
+ureq = { version = "2", default-features = false, features = ["json", "native-tls", "gzip"] }
+native-tls = "0.2"
 
 [profile.release]
 opt-level = 3

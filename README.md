@@ -23,6 +23,8 @@ Everything runs on your PC. Orbis sends nothing anywhere.
   own. Only those show in results; folders always do, and `type:xyz` still finds anything. It also
   suggests places to leave out of the map altogether (Windows, Program Files, ProgramData, AppData,
   Windows setup leftovers), and you can add your own folders.
+- **News ticker (optional, off by default).** Headlines from RSS feeds you choose scroll along the bottom;
+  click one to open it in your browser.
 - **Live activity.** When a file changes, its folder lights up.
 - **Launcher.** All Start-menu apps, with your five most-used (from Windows' own usage record) and
   pinned apps on the left. App icons are recoloured to match the theme.
@@ -78,8 +80,8 @@ Nothing is installed system-wide, and no system Python is needed.
 
 ## Privacy
 
-Orbis has no telemetry, no account and no cloud service. The only network access is the optional
-engine download above, from GitHub, PyPI and Hugging Face. The file index, the document index,
+Orbis has no telemetry, no account and no cloud service. It goes online only for the optional engine
+download above (from GitHub, PyPI and Hugging Face) and, if you turn the news ticker on, to read the feeds you chose. The file index, the document index,
 settings and icons stay in `%LOCALAPPDATA%\Orbis`.
 
 ## Keys

@@ -7,6 +7,7 @@
 mod apps;
 mod env;
 mod index;
+mod news;
 mod sem;
 mod sys;
 mod watch;
@@ -76,6 +77,11 @@ struct Settings {
     all_types: bool,
     #[serde(default = "default_types")]
     types: Vec<String>,
+    /// the news ticker along the bottom (off by default), and the RSS / Atom feeds it reads
+    #[serde(default)]
+    news: bool,
+    #[serde(default = "default_feeds")]
+    news_feeds: Vec<String>,
     /// Orbis is the Windows screen saver, after this many idle minutes
     #[serde(default)]
     saver: bool,
@@ -183,6 +189,12 @@ const TYPE_GROUPS: &[(&str, &str, &[&str], bool)] = &[
     ("design", "Design and 3D", &["dwg", "dxf", "skp", "blend", "fbx", "obj", "stl", "fig", "xd"], true),
     ("code", "Code and data", &["js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "cs", "php", "html", "css", "json", "xml", "yml", "yaml", "sql", "ps1", "bat", "sh", "ipynb"], false),
 ];
+fn default_feeds() -> Vec<String> {
+    ["https://feeds.bbci.co.uk/news/world/rss.xml", "https://www.aljazeera.com/xml/rss/all.xml", "https://www.theverge.com/rss/index.xml"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
 fn default_types() -> Vec<String> {
     TYPE_GROUPS.iter().filter(|g| g.3).flat_map(|g| g.2.iter().map(|e| e.to_string())).collect()
 }
@@ -1383,7 +1395,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
+            news::news, news::check_feed, news::open_link, scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
             vscode_item, rebuild, apps_search, apps_top, app_icons, pin_app, run_command, set_autostart, launch_app, sys_stats, set_kiosk, set_theme, quit_app, system_profile, install_engine, update_settings, exit_saver, start_saver,
             win_minimize, win_toggle_maximize, win_hide
         ])
