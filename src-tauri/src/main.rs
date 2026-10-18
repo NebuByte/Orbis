@@ -65,6 +65,17 @@ struct Settings {
     /// drives on the map (empty: every fixed drive)
     #[serde(default)]
     drives: Vec<String>,
+    /// places left out of the map and the search: the suggested ones that are ticked (see places())
+    #[serde(default = "default_skip_places")]
+    skip_places: Vec<String>,
+    /// and your own folders to leave out
+    #[serde(default)]
+    skip_custom: Vec<String>,
+    /// file types that show in results (folders always do); all_types: every type shows
+    #[serde(default)]
+    all_types: bool,
+    #[serde(default = "default_types")]
+    types: Vec<String>,
     /// Orbis is the Windows screen saver, after this many idle minutes
     #[serde(default)]
     saver: bool,
@@ -155,20 +166,111 @@ fn roots(s: &Settings) -> Vec<(String, PathBuf)> {
     map_drives(s).into_iter().map(|d| (d.clone(), PathBuf::from(format!("{d}\\")))).filter(|(_, p)| p.exists()).collect()
 }
 
-/// Windows itself, app caches, recovery and recycle-bin folders: millions of files nobody searches
-/// by hand. Built from this PC's own locations.
-fn skip_list() -> Skip {
+// ---------------------------------------------------------------- what Orbis searches
+// Two choices in the settings. File types: only the chosen ones show in results (checked while
+// searching, so a change is instant; folders always show). Places: folders the scan leaves out
+// altogether - Windows, programs and app caches by default - so they never fill the map or the
+// results (a change re-scans the drives).
+
+/// The file types offered: (key, label, extensions, on by default)
+const TYPE_GROUPS: &[(&str, &str, &[&str], bool)] = &[
+    ("docs", "Documents", &["pdf", "doc", "docx", "xls", "xlsx", "xlsm", "csv", "ppt", "pptx", "txt", "md", "rtf", "odt", "ods", "odp", "epub"], true),
+    ("images", "Images", &["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "heic", "tif", "tiff", "psd", "ai", "raw"], true),
+    ("video", "Video", &["mp4", "mkv", "mov", "avi", "webm", "wmv", "m4v"], true),
+    ("audio", "Audio", &["mp3", "wav", "flac", "m4a", "ogg", "aac", "wma"], true),
+    ("archives", "Archives", &["zip", "rar", "7z", "tar", "gz", "iso"], true),
+    ("apps", "Apps and shortcuts", &["exe", "msi", "lnk", "url", "apk", "appx", "msix"], true),
+    ("design", "Design and 3D", &["dwg", "dxf", "skp", "blend", "fbx", "obj", "stl", "fig", "xd"], true),
+    ("code", "Code and data", &["js", "ts", "tsx", "jsx", "py", "rs", "go", "java", "c", "cpp", "cs", "php", "html", "css", "json", "xml", "yml", "yaml", "sql", "ps1", "bat", "sh", "ipynb"], false),
+];
+fn default_types() -> Vec<String> {
+    TYPE_GROUPS.iter().filter(|g| g.3).flat_map(|g| g.2.iter().map(|e| e.to_string())).collect()
+}
+
+/// A place Orbis suggests leaving out, with its folders on this PC.
+#[derive(Serialize)]
+struct Place {
+    key: &'static str,
+    label: &'static str,
+    paths: Vec<String>,
+}
+fn places() -> Vec<Place> {
     let sys = env::system_drive();
-    let win = std::env::var("SystemRoot").unwrap_or_else(|_| format!(r"{sys}\Windows"));
-    let mut v = vec![win, format!(r"{sys}\$WinREAgent"), format!(r"{sys}\Config.Msi"), format!(r"{sys}\Recovery")];
-    if let Some(home) = dirs::home_dir() {
-        v.push(home.join("AppData").display().to_string());
+    let var = |v: &str, d: String| std::env::var(v).unwrap_or(d);
+    let mut programs = vec![var("ProgramFiles", format!(r"{sys}\Program Files")), var("ProgramFiles(x86)", format!(r"{sys}\Program Files (x86)"))];
+    for d in env::fixed_drives().iter().filter(|d| !d.eq_ignore_ascii_case(&sys)) {
+        programs.push(format!(r"{d}\Program Files"));
+        programs.push(format!(r"{d}\Program Files (x86)"));
     }
+    let leftovers = ["Windows.old", "$WinREAgent", "Config.Msi", "Recovery", "PerfLogs", "$Windows.~BT", "$Windows.~WS", "$SysReset", "MSOCache"];
+    vec![
+        Place { key: "windows", label: "Windows", paths: vec![var("SystemRoot", format!(r"{sys}\Windows"))] },
+        Place { key: "program_files", label: "Program Files", paths: programs },
+        Place { key: "program_data", label: "ProgramData", paths: vec![var("ProgramData", format!(r"{sys}\ProgramData"))] },
+        Place { key: "appdata", label: "AppData · app settings and caches", paths: dirs::home_dir().map(|h| vec![h.join("AppData").display().to_string()]).unwrap_or_default() },
+        Place { key: "setup", label: "Windows setup and recovery leftovers", paths: leftovers.iter().map(|n| format!(r"{sys}\{n}")).collect() },
+    ]
+}
+fn default_skip_places() -> Vec<String> {
+    ["windows", "program_files", "program_data", "appdata", "setup"].iter().map(|s| s.to_string()).collect()
+}
+
+/// Every folder the scan leaves out: the ticked places, your own, and on every drive the Recycle Bin
+/// and System Volume Information. Sorted, so it also tells whether the index matches the settings.
+fn skip_list(s: &Settings) -> Vec<String> {
+    let mut v: Vec<String> = places().into_iter().filter(|p| s.skip_places.iter().any(|k| k == p.key)).flat_map(|p| p.paths).collect();
+    v.extend(s.skip_custom.iter().cloned());
     for d in env::fixed_drives() {
         v.push(format!(r"{d}\$Recycle.Bin"));
         v.push(format!(r"{d}\System Volume Information"));
     }
-    Skip::new(&v)
+    let mut v: Vec<String> = v.into_iter().map(|p| p.trim_end_matches('\\').to_string()).collect();
+    v.sort_by_key(|p| p.to_lowercase());
+    v.dedup_by_key(|p| p.to_lowercase());
+    v
+}
+/// what the current index was built from (drives + what it left out), saved next to it
+fn scope_print(s: &Settings) -> String {
+    let mut v = map_drives(s);
+    v.push("--".into());
+    v.extend(skip_list(s));
+    v.join("\n").to_lowercase()
+}
+fn scope_file() -> PathBuf {
+    data_dir().join("index.scope")
+}
+
+#[derive(Serialize)]
+struct TypeGroup {
+    key: &'static str,
+    label: &'static str,
+    exts: Vec<&'static str>,
+}
+#[derive(Serialize)]
+struct ScopeOptions {
+    places: Vec<Place>,
+    groups: Vec<TypeGroup>,
+}
+/// The choices for "What Orbis searches": the places as they are on this PC, and the file types.
+#[tauri::command]
+fn scope_options() -> ScopeOptions {
+    let mut places = places();
+    for p in &mut places {
+        p.paths.retain(|x| Path::new(x).is_dir());
+    }
+    ScopeOptions { places, groups: TYPE_GROUPS.iter().map(|g| TypeGroup { key: g.0, label: g.1, exts: g.2.to_vec() }).collect() }
+}
+/// A folder you want left out: it must exist, and not be a whole drive.
+#[tauri::command]
+fn check_folder(path: String) -> Result<String, String> {
+    let p = path.trim().trim_matches('"').trim_end_matches(['\\', '/']).replace('/', "\\");
+    if p.len() <= 2 {
+        return Err("Pick a folder, not a whole drive (drives are chosen in the setup).".into());
+    }
+    if !Path::new(&p).is_dir() {
+        return Err(format!("There is no folder {p}"));
+    }
+    Ok(p)
 }
 
 /// Folders whose documents feed the descriptive search.
@@ -585,7 +687,9 @@ fn start_index(app: AppHandle, force: bool) {
         if !force {
             match Index::load(&cache_path()) {
                 Some(ix) => {
-                    need_build = now() - ix.built_at > REFRESH_AFTER_SECS;
+                    // stale, or built with other drives / places left out than the settings say now
+                    let scope_ok = std::fs::read_to_string(scope_file()).is_ok_and(|t| t == scope_print(&settings_of(&app2)));
+                    need_build = now() - ix.built_at > REFRESH_AFTER_SECS || !scope_ok;
                     *s.idx.write().unwrap() = Some(Arc::new(ix));
                     let _ = app2.emit("index-ready", ());
                 }
@@ -605,9 +709,11 @@ fn start_index(app: AppHandle, force: bool) {
                 });
             }
             let t = Instant::now();
-            let ix = Index::build(&roots(&settings_of(&app2)), &skip_list(), &s.progress);
+            let set = settings_of(&app2);
+            let ix = Index::build(&roots(&set), &Skip::new(&skip_list(&set)), &s.progress);
             done.store(true, Ordering::Relaxed);
             let _ = ix.save(&cache_path());
+            let _ = std::fs::write(scope_file(), scope_print(&set));
             let secs = t.elapsed().as_secs_f32();
             *s.idx.write().unwrap() = Some(Arc::new(ix));
             let _ = app2.emit("index-built", secs);
@@ -751,10 +857,17 @@ struct SearchOut {
 }
 
 #[tauri::command]
-async fn search(q: String, limit: usize, filters: Option<index::Filters>, s: State<'_, Shared>) -> Result<SearchOut, String> {
+async fn search(q: String, limit: usize, filters: Option<index::Filters>, s: State<'_, Shared>, st: State<'_, RwLock<Settings>>) -> Result<SearchOut, String> {
     let ix = get(&s)?;
     let t = Instant::now();
-    let (total, top) = ix.search(&q, &filters.unwrap_or_default(), limit.clamp(1, 1000));
+    let mut f = filters.unwrap_or_default();
+    {
+        let set = st.read().unwrap();
+        if !set.all_types && f.exts.is_empty() {
+            f.allowed = Some(set.types.iter().map(|e| e.to_lowercase()).collect());
+        }
+    }
+    let (total, top) = ix.search(&q, &f, limit.clamp(1, 1000));
     let hits = top
         .iter()
         .map(|&(i, _)| {
@@ -877,8 +990,8 @@ fn update_settings(patch: serde_json::Value, app: AppHandle) -> Result<Settings,
             watch::start(app.clone(), live_roots(&after));
         }
     }
-    if after.drives != before.drives {
-        start_index(app.clone(), true);
+    if after.drives != before.drives || skip_list(&after) != skip_list(&before) {
+        start_index(app.clone(), true); // a re-scan with the new drives / places left out
     }
     if after.saver != before.saver || (after.saver && after.saver_minutes != before.saver_minutes) {
         apply_screensaver(after.saver, after.saver_minutes)?;
@@ -1233,7 +1346,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
+            scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
             vscode_item, rebuild, apps_search, apps_top, app_icons, pin_app, run_command, set_autostart, launch_app, sys_stats, set_kiosk, set_theme, quit_app, system_profile, install_engine, update_settings, exit_saver, start_saver,
             win_minimize, win_toggle_maximize, win_hide
         ])

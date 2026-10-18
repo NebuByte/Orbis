@@ -845,7 +845,7 @@ $('clr').onclick = () => { resetAll(); $('q').focus(); };
 // screen and the screen saver keep their keys.
 addEventListener('keydown', e => {
   const q = $('q'), t = document.activeElement;
-  if (saverOn || e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey || e.isComposing || t === q || q.disabled || !$('wiz').hidden) return;
+  if (saverOn || e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey || e.isComposing || t === q || q.disabled || !$('wiz').hidden || !$('scope').hidden) return;
   if (t && (t.isContentEditable || /^(TEXTAREA|SELECT)$/.test(t.tagName) || (t.tagName === 'INPUT' && !/^(checkbox|radio|button|submit)$/.test(t.type)))) return;
   if (e.key.length === 1 || e.key === 'Backspace') {
     e.preventDefault();
@@ -1420,6 +1420,88 @@ $('psaver').onclick = async () => {
 $('psvmin').onclick = e => { const b = e.target.closest('[data-svmin]'); if (b) setPrefs({ saver_minutes: +b.dataset.svmin }); };
 $('psvprev').onclick = () => { $('pop').hidden = true; $('gear').setAttribute('aria-expanded', 'false'); invoke('start_saver'); };
 const deviceName = d => ({ NPU: 'the NPU', GPU: 'the Intel GPU', CPU: 'the CPU' }[d] || 'the best device here');
+
+// ---------------------------------------------------------------- what Orbis searches
+// File types that show in results (instant) and places the scan leaves out (a re-scan). The choices
+// and the places as they are on this PC come from Rust (scope_options).
+let scope = null;
+async function openScope() {
+  let o; try { o = await invoke('scope_options'); } catch (e) { toast(String(e)); return; }
+  const S = st.settings;
+  scope = { o, all: !!S.all_types, types: new Set(S.types), places: new Set(S.skip_places), custom: [...S.skip_custom],
+    before: JSON.stringify([...S.skip_places].sort()) + JSON.stringify(S.skip_custom) };
+  $('pop').hidden = true; $('gear').setAttribute('aria-expanded', 'false');
+  renderScope(); $('scope').hidden = false;
+}
+function renderScope() {
+  const s = scope, o = s.o, known = new Set(o.groups.flatMap(g => g.exts)), off = s.all ? ' disabled' : '';
+  const own = [...s.types].filter(e => !known.has(e)).sort();
+  const grp = g => {
+    const on = g.exts.filter(e => s.types.has(e)).length;
+    return `<div class="sgrp${s.all ? ' off' : ''}"><div class="sgh"><b>${esc(g.label)}</b><span>${on} of ${g.exts.length}</span>
+      <button type="button" class="sw2" role="switch" aria-checked="${on === g.exts.length}" aria-label="${esc(g.label)}" data-grp="${g.key}"${off}></button></div>
+      <div class="exts">${g.exts.map(e => `<button type="button" class="ext" aria-pressed="${s.types.has(e)}" data-ext="${e}"${off}>${e}</button>`).join('')}</div></div>`;
+  };
+  $('scopebox').innerHTML = `
+    <h1 id="scT">WHAT ORBIS SEARCHES</h1>
+    <p class="lead">Leave out the file types you never look for and the system folders full of program files. Fewer results, and the right ones.</p>
+    <div class="opt"><b>Only these file types</b><button type="button" class="sw2 ctl" role="switch" aria-checked="${!s.all}" data-all></button>
+      <small>${s.all ? 'Off: every file type shows in results.' : 'Only the types below show in results. Folders always show, and type:xyz in the search box still finds any type.'}</small></div>
+    <div class="sgrid">${o.groups.map(grp).join('')}
+      <div class="sgrp${s.all ? ' off' : ''}"><div class="sgh"><b>Your own types</b><span>${own.length}</span></div>
+        <div class="exts">${own.map(e => `<span class="ext own">${esc(e)}<button type="button" data-rmext="${esc(e)}" aria-label="Remove ${esc(e)}"${off}>×</button></span>`).join('')}
+          <span class="addx"><input id="scext" placeholder="e.g. sldprt, .cr2" spellcheck="false" autocomplete="off"${off}><button type="button" data-addext${off}>ADD</button></span></div></div></div>
+    <div class="opt"><b>Places to leave out</b><span></span>
+      <small>The scan skips these folders, so they never fill the map or your results. Changing them re-scans your drives once. The Recycle Bin and System Volume Information are always left out.</small></div>
+    <div class="plist">${o.places.map(p => `<label class="place"><input type="checkbox" data-place="${p.key}"${s.places.has(p.key) ? ' checked' : ''}><span><b>${esc(p.label)}</b><small>${esc(p.paths.join(' · ') || 'not on this PC')}</small></span></label>`).join('')}
+      ${s.custom.map((c, i) => `<div class="place own"><span><b>${esc(c)}</b><small>your folder</small></span><button type="button" data-rmplace="${i}" aria-label="Stop leaving out ${esc(c)}">×</button></div>`).join('')}</div>
+    <div class="add"><input id="scplace" placeholder="Leave out another folder, e.g. D:\\Games" spellcheck="false" autocomplete="off"><button type="button" data-addplace>ADD</button></div>
+    <div class="acts2"><button type="button" data-scope="cancel">CANCEL</button><button type="button" class="pri" data-scope="apply">APPLY</button></div>`;
+}
+function addExts() {
+  const box = $('scext'), raw = box.value.trim();
+  const v = raw.toLowerCase().split(/[\s,;]+/).map(x => x.replace(/^\*?\./, '')).filter(x => /^[a-z0-9_+-]{1,12}$/.test(x));
+  if (raw && !v.length) { toast('Type an extension, like sldprt or .cr2'); return; }
+  v.forEach(x => scope.types.add(x)); renderScope(); $('scext').focus();
+}
+async function addPlace() {
+  const raw = $('scplace').value.trim(); if (!raw) return;
+  try {
+    const p = await invoke('check_folder', { path: raw });
+    if (!scope.custom.some(c => c.toLowerCase() === p.toLowerCase())) scope.custom.push(p);
+    renderScope(); $('scplace').focus();
+  } catch (e) { toast(String(e)); }
+}
+async function applyScope() {
+  const s = scope, places = [...s.places].sort(), moved = JSON.stringify(places) + JSON.stringify(s.custom) !== s.before;
+  await setPrefs({ all_types: s.all, types: [...s.types].sort(), skip_places: places, skip_custom: s.custom });
+  $('scope').hidden = true; scope = null;
+  toast(moved ? 'Saved. Re-scanning your drives without those places…' : 'Saved');
+  if (hasQuery()) runQuery($('q').value);
+}
+$('pscope').onclick = openScope;
+$('scope').addEventListener('click', e => {
+  const s = scope; if (!s) return;
+  const t = e.target;
+  if (t.closest('[data-all]')) { s.all = !s.all; renderScope(); return; }
+  const g = t.closest('[data-grp]');
+  if (g) { if (g.disabled) return; const grp = s.o.groups.find(x => x.key === g.dataset.grp), full = grp.exts.every(x => s.types.has(x)); grp.exts.forEach(x => full ? s.types.delete(x) : s.types.add(x)); renderScope(); return; }
+  const x = t.closest('[data-ext]');
+  if (x) { if (x.disabled) return; const v = x.dataset.ext; if (s.types.has(v)) s.types.delete(v); else s.types.add(v); renderScope(); return; }
+  const rx = t.closest('[data-rmext]'); if (rx) { s.types.delete(rx.dataset.rmext); renderScope(); return; }
+  if (t.closest('[data-addext]')) { addExts(); return; }
+  const rp = t.closest('[data-rmplace]'); if (rp) { s.custom.splice(+rp.dataset.rmplace, 1); renderScope(); return; }
+  if (t.closest('[data-addplace]')) { addPlace(); return; }
+  const act = t.closest('[data-scope]'); if (!act) return;
+  if (act.dataset.scope === 'cancel') { $('scope').hidden = true; scope = null; } else applyScope();
+});
+$('scope').addEventListener('change', e => { const c = e.target.closest('[data-place]'); if (c && scope) { if (c.checked) scope.places.add(c.dataset.place); else scope.places.delete(c.dataset.place); } });
+$('scope').addEventListener('keydown', e => {
+  if (e.key === 'Escape') { $('scope').hidden = true; scope = null; e.stopPropagation(); return; }
+  if (e.key !== 'Enter') return;
+  if (e.target.id === 'scext') { e.preventDefault(); addExts(); }
+  else if (e.target.id === 'scplace') { e.preventDefault(); addPlace(); }
+});
 
 // ---------------------------------------------------------------- first-run setup
 // Orbis looks at the PC and suggests settings: motion, effects, live activity, search by meaning

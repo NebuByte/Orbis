@@ -18,6 +18,11 @@ Everything runs on your PC. Orbis sends nothing anywhere.
 - **The map.** Your folders form a plexus globe that turns on its own, with each layer turning against
   its neighbours. A search unfolds it into a flat map and draws glowing lines from the core to every
   result.
+- **You choose what it searches.** In the settings, *What Orbis searches* lists the common file types by
+  group (documents, images, video, audio, archives, apps, design, code), each one switchable, plus your
+  own. Only those show in results; folders always do, and `type:xyz` still finds anything. It also
+  suggests places to leave out of the map altogether (Windows, Program Files, ProgramData, AppData,
+  Windows setup leftovers), and you can add your own folders.
 - **Live activity.** When a file changes, its folder lights up.
 - **Launcher.** All Start-menu apps, with your five most-used (from Windows' own usage record) and
   pinned apps on the left. App icons are recoloured to match the theme.
@@ -53,8 +58,9 @@ also watches its own frame rate. If it keeps falling short while Orbis has the s
 busy with other work, Orbis steps down by itself, first to 30 fps and then to lite effects. **Try again**
 in the settings, or running the setup again, gives the faster settings another chance.
 
-Orbis draws nothing while it is minimised or covered. It maps every fixed drive except Windows' own
-folders and app caches, and it watches only your data drives and your user folders for live activity.
+Orbis draws nothing while it is minimised or covered. It maps every fixed drive except the places you
+leave out (by default Windows, programs, ProgramData, app caches and setup leftovers), and it watches
+only your data drives and your user folders for live activity.
 
 ## Install
 

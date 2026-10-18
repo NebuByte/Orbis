@@ -85,6 +85,10 @@ pub struct Filters {
     /// at least this many bytes; 0 = any
     #[serde(default)]
     pub min_size: u64,
+    /// the file types chosen in "What Orbis searches" (None: every type). Set by Orbis, not the box;
+    /// folders always pass, and an explicit type: filter overrides it.
+    #[serde(skip)]
+    pub allowed: Option<std::collections::HashSet<String>>,
 }
 impl Filters {
     fn any(&self) -> bool {
@@ -501,6 +505,11 @@ impl Index {
 
     fn passes(&self, i: usize, f: &Filters, within: &str) -> bool {
         let k = self.kind[i];
+        if let Some(allowed) = &f.allowed {
+            if k == K_FILE && !allowed.contains(self.norm_name(i).rsplit_once('.').map(|(_, e)| e).unwrap_or("")) {
+                return false;
+            }
+        }
         if f.folders_only && k != K_DIR && k != K_COLLAPSED {
             return false;
         }
@@ -537,7 +546,7 @@ impl Index {
         if toks.is_empty() && !f.any() {
             return (0, Vec::new());
         }
-        let (noise, within, filtered) = (self.noise(), normalize(&f.within), f.any());
+        let (noise, within, filtered) = (self.noise(), normalize(&f.within), f.any() || f.allowed.is_some());
         let mut hits: Vec<(u32, f32)> = (1..self.len())
             .into_par_iter()
             .filter_map(|i| {
