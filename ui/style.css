@@ -128,10 +128,10 @@ body.windowed .wc{display:flex}
 .dock button{display:flex;align-items:center;gap:9px;min-width:0;font:500 12px var(--f-ui);color:var(--ink);background:transparent;border:0;border-radius:7px;padding:5px 6px;cursor:pointer;text-align:left}
 .dock button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dock button:hover{color:var(--lit);background:color-mix(in srgb,var(--acc) 9%,transparent)}
-.aicon{width:24px;height:24px;flex:none;display:block;filter:drop-shadow(0 0 6px color-mix(in srgb,var(--acc) 35%,transparent))}
+.aicon{width:24px;height:24px;flex:none;display:block;filter:drop-shadow(0 0 2px color-mix(in srgb,var(--acc) 12%,transparent))}
 .dock .badge,.dock .aicon{width:24px;height:24px;flex:none}
 .dock .lbl:not(:first-child){margin-top:12px}
-.pin{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--acc);margin-left:auto;flex:none;box-shadow:0 0 6px var(--acc)}
+.pin{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--acc);margin-left:auto;flex:none}
 .row .n .pin{margin-left:8px;vertical-align:2px}
 .fchips{display:flex;flex-wrap:wrap;gap:5px;padding:2px 8px 6px}
 .fchips span{font:600 9px var(--f-hd);letter-spacing:.1em;text-transform:uppercase;color:var(--acc);box-shadow:inset 0 0 0 1px var(--line);border-radius:999px;padding:2px 8px}
