@@ -170,7 +170,7 @@ fn roots(s: &Settings) -> Vec<(String, PathBuf)> {
 // Two choices in the settings. File types: only the chosen ones show in results (checked while
 // searching, so a change is instant; folders always show). Places: folders the scan leaves out
 // altogether - Windows, programs and app caches by default - so they never fill the map or the
-// results (a change re-scans the drives).
+// results (a change reshapes the index in place: only folders taken back in are read).
 
 /// The file types offered: (key, label, extensions, on by default)
 const TYPE_GROUPS: &[(&str, &str, &[&str], bool)] = &[
