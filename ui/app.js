@@ -716,7 +716,7 @@ function renderDetail() {
   if (!selHit) { el.hidden = true; return; }
   el.hidden = false;
   const h = selHit, d = selInfo;
-  const acts = isDir => `<div class="acts"><button class="pri" data-a="open_item">OPEN</button><button data-a="preview">PREVIEW</button><button data-a="ws" title="Add to a workspace">+ WORKSPACE</button><button data-a="reveal_item">FOLDER</button>${isDir ? '<button data-a="vscode_item">VS CODE</button>' : ''}<button data-a="copy">COPY</button></div>`;
+  const acts = isDir => `<div class="acts"><button class="pri" data-a="open_item">OPEN</button><button data-a="preview">PREVIEW</button><button data-a="reveal_item" title="Show it in its folder">FOLDER</button>${isDir ? '<button data-a="vscode_item" title="Open in VS Code">VS CODE</button>' : ''}<button data-a="ws" title="Add to a workspace">WORKSPACE</button><button data-a="copy" title="Copy the full path">COPY PATH</button></div>`;
   if (!h.node) {   // a document the map does not hold
     el.innerHTML = `<div class="nm" dir="auto">${esc(h.name)}</div><div class="pa" dir="auto">${esc(h.path)}</div>
       <dl><dt>SIZE</dt><dd>${fmt(h.size)}</dd><dt>CHANGED</dt><dd>${day(h.mtime)}</dd></dl>${acts(false)}`;
