@@ -13,6 +13,7 @@ const { listen } = window.__TAURI__.event;
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const num = n => Number(n).toLocaleString('en-US');
+const itemsN = n => num(n) + (Number(n) === 1 ? ' item' : ' items');
 const fmt = b => b == null ? '—' : b >= 1e12 ? (b / 1e12).toFixed(2) + ' TB' : b >= 1e9 ? (b / 1e9).toFixed(b >= 1e11 ? 0 : 1) + ' GB'
   : b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : b >= 1e3 ? (b / 1e3).toFixed(0) + ' KB' : b + ' B';
 const day = s => s ? new Date(s * 1000).toLocaleString('en-GB', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -605,7 +606,7 @@ function nameRow(h, i, sub) {
   const where = pathOf(h.chain.slice(0, -1));   // sub: the main result's folder path, to compare against
   const cls = `row${h.k < LINES && !sub ? ' lit' : ''}${sel && h.node === sel ? ' on' : ''}${cursor === i ? ' cur' : ''}${sub ? ' sub' : ''}`;
   if (sub) return `<div class="${cls}" data-r="${i}"><span class="k"></span><span class="p2" title="${esc(where)}">${esc(diffPath(where, sub))}</span>${h.noisy ? '<span class="m"><span class="tag">copy / build</span></span>' : ''}</div>`;
-  const meta = h.kind === K.FILE ? `${fmt(h.size)} · ${day(h.mtime)}` : h.kind === K.LINK ? 'link' : `${num(h.node.count)} items · ${fmt(h.size)}`;
+  const meta = h.kind === K.FILE ? `${fmt(h.size)} · ${day(h.mtime)}` : h.kind === K.LINK ? 'link' : `${itemsN(h.node.count)} · ${fmt(h.size)}`;
   const places = h.dupes && h.dupes.length ? `<button type="button" class="chip" data-dupes="${i}" aria-expanded="${openDupes.has(h)}">${h.dupes.length + 1} places</button>` : '';
   return `<div class="${cls}" data-r="${i}">
     <span class="k t" style="color:${tintOf(h)}">${esc(extOf(h.name, h.kind))}</span>
@@ -727,7 +728,7 @@ function renderDetail() {
   const type = d.kind === K.DIR && d.is_repo ? 'Folder · Git repository' : KIND_LABEL[d.kind];
   const z = d.zone, src = z && (z.host || z.referrer);
   el.innerHTML = `<div class="nm" dir="auto">${esc(d.name)}</div><div class="pa" dir="auto">${esc(d.path)}</div>
-    <dl><dt>TYPE</dt><dd>${type}</dd><dt>SIZE</dt><dd>${fmt(d.size)}${isFile ? '' : ` · ${num(d.count)} items`}</dd>
+    <dl><dt>TYPE</dt><dd>${type}</dd><dt>SIZE</dt><dd>${fmt(d.size)}${isFile ? '' : ` · ${itemsN(d.count)}`}</dd>
     <dt>CHANGED</dt><dd>${day(d.mtime)}</dd>
     ${d.came_from ? `<dt>CAME FROM</dt><dd dir="auto" title="${esc(d.came_from[1])}">${esc(d.came_from[0])}</dd>` : ''}
     ${isFile && src ? `<dt>DOWNLOADED</dt><dd>${esc(src)}</dd>` : ''}</dl>
@@ -760,7 +761,7 @@ async function openQuick(h) {
   qlOn = true; qlFor = h; const my = ++qlSeq;
   const path = hitPath(h), isDir = h.kind === K.DIR || h.kind === K.TOOL || h.kind === K.LINK;
   const ext = isDir ? '' : (h.name.split('.').pop() || '').toLowerCase(), src = window.__TAURI__.core.convertFileSrc(path);
-  const meta = isDir ? `${h.node ? num(h.node.count) + ' items · ' : ''}${fmt(h.size)}` : `${fmt(h.size)} · ${day(h.mtime)}`;
+  const meta = isDir ? `${h.node ? itemsN(h.node.count) + ' · ' : ''}${fmt(h.size)}` : `${fmt(h.size)} · ${day(h.mtime)}`;
   $('qlh').innerHTML = `<span class="k t" style="color:${tintOf(h)}">${esc(extOf(h.name, h.kind))}</span><div><b dir="auto">${esc(h.name)}</b><small dir="auto">${esc(path)} · ${meta}</small></div>
     <button type="button" data-ql="open_item">OPEN</button><button type="button" data-ql="reveal_item">FOLDER</button><button type="button" data-ql="close" aria-label="Close preview">×</button>`;
   const body = $('qlb'), put = html => { if (my === qlSeq) body.innerHTML = html; };
@@ -769,7 +770,7 @@ async function openQuick(h) {
     put('<div class="qle">Loading…</div>');
     try {
       const items = await invoke('folder_items', { id: h.node.id });
-      put(items.length ? `<div class="qlf">${items.map(c => { const f = c.kind === K.FILE; return `<div><span class="k t">${esc(extOf(c.name, c.kind))}</span><span dir="auto">${esc(c.name)}</span><small>${f ? fmt(c.size) : num(c.count) + ' items'}</small></div>`; }).join('')}</div>` : '<div class="qle">This folder is empty.</div>');
+      put(items.length ? `<div class="qlf">${items.map(c => { const f = c.kind === K.FILE; return `<div><span class="k t">${esc(extOf(c.name, c.kind))}</span><span dir="auto">${esc(c.name)}</span><small>${f ? fmt(c.size) : itemsN(c.count)}</small></div>`; }).join('')}</div>` : '<div class="qle">This folder is empty.</div>');
     } catch (e) { put(`<div class="qle">${esc(String(e))}</div>`); }
   } else if (QL_IMG.includes(ext)) put(`<img class="qli" src="${src}" alt="">`);
   else if (ext === 'pdf') put(`<iframe class="qlp" src="${src}#toolbar=0&view=FitH" title="PDF preview"></iframe>`);
