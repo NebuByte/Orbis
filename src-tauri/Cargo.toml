@@ -27,6 +27,9 @@ native-tls = "0.2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 # drag results out of Orbis into Explorer, mail, chat apps (a real Windows file drag)
 drag = "2"
+# voice: push-to-talk from anywhere (Ctrl+Alt+Space), and the microphone for the page without a prompt
+tauri-plugin-global-shortcut = "2"
+webview2-com = "0.39"
 
 [profile.release]
 opt-level = 3

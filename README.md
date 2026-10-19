@@ -37,6 +37,14 @@ Everything runs on your PC. Orbis sends nothing anywhere.
   Windows setup leftovers), and you can add your own folders.
 - **News ticker (optional, off by default).** Headlines from RSS feeds you choose scroll along the bottom;
   click one to open it in your browser.
+- **Voice (optional, off by default): Orbis listens.** Push-to-talk with **Ctrl+Alt+Space** from anywhere
+  (or the mic in the search box), or say **"Orbis"** while Orbis is open. While it listens, the core moves
+  with your voice. "Open Spotify", "lock the PC", "restart" (it asks you to say yes), "dark theme", "find
+  the invoice from March" - anything else goes to the search box as if you typed it. English and Arabic.
+  Speech is turned into words on your PC (Whisper small with OpenVINO, about 250 MB, installed once);
+  nothing is recorded or sent anywhere. Orbis never opens a Bluetooth headset's microphone (that would
+  drop your music to call quality), and in "Orbis" mode it only listens while it is open on screen. It
+  ignores talk *about* it: the name has to open what you say, followed by a request.
 - **Live activity.** When a file changes, its folder lights up.
 - **Launcher.** All Start-menu apps, with your five most-used (from Windows' own usage record) and
   pinned apps on the left. App icons are recoloured to match the theme.
@@ -93,7 +101,7 @@ Nothing is installed system-wide, and no system Python is needed.
 ## Privacy
 
 Orbis has no telemetry, no account and no cloud service. It goes online only for the optional engine
-download above (from GitHub, PyPI and Hugging Face) and, if you turn the news ticker on, to read the feeds you chose. The file index, the document index,
+download above and the optional voice model (from GitHub, PyPI and Hugging Face) and, if you turn the news ticker on, to read the feeds you chose. The file index, the document index,
 settings and icons stay in `%LOCALAPPDATA%\Orbis`.
 
 ## Keys
@@ -106,6 +114,7 @@ settings and icons stay in `%LOCALAPPDATA%\Orbis`.
 | Esc | clear |
 | F11 | switch between full screen and a window |
 | Ctrl+K | jump to the search box |
+| Ctrl+Alt+Space | talk to Orbis (when voice is on; works from anywhere) |
 | Ctrl+Q | quit completely (closing the window only hides Orbis in the tray) |
 | right-click an app | pin or unpin it |
 

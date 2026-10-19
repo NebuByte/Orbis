@@ -24,6 +24,7 @@
     <input id="q" type="search" placeholder="Find" autocomplete="off" spellcheck="false" dir="auto" disabled>
     <span class="mode" id="mode" hidden></span>
     <button class="clr" id="clr" type="button" aria-label="Clear search" hidden>×</button>
+    <button class="mic" id="mic" type="button" aria-label="Talk to Orbis (Ctrl+Alt+Space)" title="Talk to Orbis · Ctrl+Alt+Space" aria-pressed="false" hidden><svg width="14" height="16" viewBox="0 0 14 16" aria-hidden="true"><rect x="4.2" y="1" width="5.6" height="9" rx="2.8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.8 7.6a5.2 5.2 0 0 0 10.4 0M7 12.8V15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
   </label>
   <div class="status">
     <span class="npu" id="npu" hidden><i></i>NPU</span>
@@ -73,6 +74,9 @@
   <div class="pline" id="psemline"></div>
   <button type="button" class="tgl" id="pnews" aria-pressed="false" style="margin-top:6px">News ticker</button>
   <div id="pfeeds"></div>
+  <div class="pt" style="margin-top:12px">VOICE</div>
+  <div class="seg" id="pvoice"><button type="button" data-voice="off">OFF</button><button type="button" data-voice="push">PUSH TO TALK</button><button type="button" data-voice="wake">SAY “ORBIS”</button></div>
+  <div class="pline" id="pvoiceline"></div>
   <div class="pt" style="margin-top:12px">STARTUP &amp; SCREEN SAVER</div>
   <button type="button" class="tgl" id="auto" aria-pressed="false">Start with Windows</button>
   <button type="button" class="tgl" id="ptray" aria-pressed="false" style="margin-top:6px">Start quietly in the tray</button>

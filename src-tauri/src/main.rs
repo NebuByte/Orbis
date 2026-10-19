@@ -12,6 +12,7 @@ mod preview;
 mod reclaim;
 mod sem;
 mod sys;
+mod voice;
 mod watch;
 mod workspaces;
 
@@ -99,6 +100,13 @@ struct Settings {
     /// when Windows starts Orbis, stay in the tray instead of opening full screen
     #[serde(default)]
     tray_start: bool,
+    /// voice: "off", "push" (push-to-talk: Ctrl+Alt+Space or the mic button) or "wake" (say "Orbis"
+    /// while Orbis is open)
+    #[serde(default = "off")]
+    voice: String,
+}
+fn off() -> String {
+    "off".into()
 }
 fn ten() -> u32 {
     10
@@ -1059,6 +1067,12 @@ fn update_settings(patch: serde_json::Value, app: AppHandle) -> Result<Settings,
     } else if skip_list(&after) != skip_list(&before) {
         reshape_index(app.clone(), &before, &after); // places only: change the index itself
     }
+    if after.voice != before.voice {
+        voice::apply_hotkey(&app, after.voice != "off");
+        if after.voice == "off" {
+            app.state::<voice::Voice>().stop();
+        }
+    }
     if after.saver != before.saver || (after.saver && after.saver_minutes != before.saver_minutes) {
         apply_screensaver(after.saver, after.saver_minutes)?;
     }
@@ -1456,6 +1470,16 @@ fn main() {
     let settings = load_settings();
     let quiet = args.iter().any(|a| a == "--autostart") && settings.tray_start && kind == Launch::Normal;
     let app = tauri::Builder::default()
+        // push-to-talk from anywhere in Windows (registered only while voice is on)
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _sc, ev| {
+                    if ev.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        voice::on_hotkey(app);
+                    }
+                })
+                .build(),
+        )
         // a second start (the screen saver, a shortcut) hands over to the Orbis already running
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if launch_kind(&argv) == Launch::Saver {
@@ -1481,6 +1505,7 @@ fn main() {
         .manage(sys::Sys::default())
         .manage(sem::Sem::default())
         .manage(watch::Live::default())
+        .manage(voice::Voice::default())
         .setup(move |app| {
             let h = app.handle().clone();
             *app.state::<Shared>().moves.write().unwrap() = load_moves();
@@ -1496,11 +1521,13 @@ fn main() {
             }
             if let Some(w) = main_window(&h) {
                 apply_kiosk(&w, settings.kiosk);
+                voice::allow_mic(&w);
                 if !quiet {
                     let _ = w.show();
                     let _ = w.set_focus();
                 }
             }
+            voice::apply_hotkey(&h, settings.voice != "off");
             if let Err(e) = build_tray(&h) {
                 eprintln!("no tray icon: {e}");
             }
@@ -1535,6 +1562,7 @@ fn main() {
             news::news, news::check_feed, news::open_link, preview::preview_text, preview::preview_office, folder_items, activity, reclaim_report, recycle_items, drag_out, answer,
             workspaces::workspaces, workspaces::save_workspace, workspaces::delete_workspace, workspaces::open_workspace, scope_options, check_folder, status, base_graph, search, describe, describe_warm, reindex_docs, details, open_item, reveal_item,
             vscode_item, rebuild, apps_search, apps_top, app_icons, pin_app, run_command, set_autostart, launch_app, sys_stats, set_kiosk, set_theme, quit_app, system_profile, install_engine, update_settings, exit_saver, start_saver,
+            voice::voice_status, voice::voice_hear, voice::voice_warm, voice::voice_install,
             win_minimize, win_toggle_maximize, win_hide
         ])
         .build(tauri::generate_context!())
@@ -1542,6 +1570,7 @@ fn main() {
     app.run(|app, ev| {
         if let RunEvent::Exit = ev {
             app.state::<sem::Sem>().stop();
+            app.state::<voice::Voice>().stop();
         }
     });
 }

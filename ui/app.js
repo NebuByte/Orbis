@@ -973,6 +973,7 @@ addEventListener('keydown', e => {
   }
 });
 addEventListener('keydown', e => {
+  if (e.key === 'Escape' && (voice.state === 'listening' || voice.state === 'thinking')) { voiceIdle(); return; }
   if (e.key === 'Escape' && qlOn) { closeQuick(); return; }
   if (e.key === 'Escape' && ttMode && !sel) { leaveTravel(); return; }
   if (e.key === 'Escape') { if (!$('pop').hidden) $('pop').hidden = true; else if (sel && hasQuery()) unselect(); else if (hasQuery() || sel) resetAll(); }
@@ -1154,6 +1155,7 @@ function drawCore(t, intro) {
     g.setLineDash([2, 6]); g.beginPath(); g.arc(0, 0, b * 1.12, 0, 6.3); g.strokeStyle = `rgba(${acc},${.3 * et})`; g.stroke(); g.setLineDash([]);
   }
   drawDriveArcs(b, easeOut((intro - .75) / .7));
+  drawVoice(b);
   g.beginPath(); g.arc(0, 0, b * .2, 0, 6.3); g.strokeStyle = `rgba(${lit},${.85 * easeOut(intro / .3)})`; g.lineWidth = 1.2; g.stroke();
   flat();
   const c = { px: W / 2 + C.ox, py: H / 2 + C.oy };
@@ -1512,7 +1514,7 @@ function renderPrefs() {
   $('psaver').setAttribute('aria-pressed', String(!!S.saver)); $('psaver').textContent = 'Screen saver: ' + (S.saver ? `ON · after ${S.saver_minutes} min` : 'OFF');
   $('psvmin').hidden = !S.saver;
   document.querySelectorAll('[data-svmin]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.svmin === S.saver_minutes)));
-  renderFeeds();
+  renderFeeds(); renderVoicePrefs();
   $('plive').setAttribute('aria-pressed', String(!!S.live)); $('plive').textContent = 'Live activity: ' + (S.live ? 'ON' : 'OFF');
   $('psem').setAttribute('aria-pressed', String(!!(S.semantic && e.available)));
   $('psem').disabled = !caps.sem && !S.semantic; $('psem').title = caps.sem ? '' : caps.why.sem;
@@ -1539,6 +1541,243 @@ $('psaver').onclick = async () => {
 $('psvmin').onclick = e => { const b = e.target.closest('[data-svmin]'); if (b) setPrefs({ saver_minutes: +b.dataset.svmin }); };
 $('psvprev').onclick = () => { $('pop').hidden = true; $('gear').setAttribute('aria-expanded', 'false'); invoke('start_saver'); };
 const deviceName = d => ({ NPU: 'the NPU', GPU: 'the Intel GPU', CPU: 'the CPU' }[d] || 'the best device here');
+
+// ---------------------------------------------------------------- voice (listening)
+// Push-to-talk (Ctrl+Alt+Space anywhere, or the mic in the search box), or say "Orbis" while Orbis is
+// open. The words are worked out on this PC (orbis_voice.py) and then treated like typing: "open
+// Spotify" opens it, "lock the PC" locks it, anything else goes to the search box. While Orbis listens,
+// the core moves with your voice. The microphone is only open while listening (in "Orbis" mode: while
+// Orbis is open), never a Bluetooth headset's mic, and nothing is kept.
+const voice = { installed: false, installing: false, msg: '', pct: 0, state: 'off', stream: null, ctx: null, an: null, freq: null, proc: null,
+  level: 0, vis: 0, bars: new Float32Array(72), seg: null, pre: [], hot: 0, nf: .006, until: 0, busy: false, opening: false };
+const voiceMode = () => setting('voice', 'off');
+const CHUNK_S = 1024 / 16000;
+const NOT_OWN_MIC = /hands-?free|headset|bluetooth|airpods|buds|\bbt\b/i;
+// the name at the start of what was said (Whisper sometimes writes it a little differently)
+const WAKE = /^\s*(?:(?:hey|ok|okay|hi)\s+)?(?:orbis|orbus|orbiss|orbys|orbiz|orbit|arbis|or bis|اوربس|أوربس|اوربيس)\b[\s,.!?،]*/i;
+// after the name, a request - so "Orbis is great" or "Orbis was slow today" are talk about it, not to it
+const REQUEST = /^(open|launch|start|run|find|search|look|show|check|lock|restart|reboot|shut|sleep|go|sign|log|switch|use|change|play|read|list|tell|give|what|what's|whats|when|where|who|which|how|any|do|did|my|empty|clear|cancel|never|stop|email|emails|mail|calendar|meetings?|drive|files?|folders?|documents?|downloads|desktop|settings|wifi|bluetooth|task|theme|افتح|شغل|ابحث|دور|اعرض|وين|شو|ما|ماذا|متى|كم|هل|اقفل|ايش)\b/i;
+const NOISE = /^(thank you\.?|thanks for watching!?|you|bye\.?|\.+|-+)$/i;
+const wordsOf = t => (t.match(/[\p{L}\p{N}]+/gu) || []).length;
+
+async function micOpen(retried) {
+  if (voice.stream) return true;
+  const want = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
+  try {
+    let last = ''; try { last = localStorage.getItem('orbis.mic') || ''; } catch { /* none */ }
+    const own = (await navigator.mediaDevices.enumerateDevices())
+      .filter(d => d.kind === 'audioinput' && d.label && !/^(default|communications)$/.test(d.deviceId) && !NOT_OWN_MIC.test(d.label));
+    const pick = own.find(d => d.deviceId === last) || own.find(d => /array|internal|built-?in|realtek|intel/i.test(d.label)) || own[0];
+    voice.stream = await navigator.mediaDevices.getUserMedia({ audio: pick ? { ...want, deviceId: { exact: pick.deviceId } } : want });
+    const tr = voice.stream.getAudioTracks()[0];
+    if (!pick && !retried && NOT_OWN_MIC.test(tr.label)) { micClose(); return micOpen(true); }   // the names are known now
+    try { localStorage.setItem('orbis.mic', tr.getSettings().deviceId || ''); } catch { /* fine */ }
+    voice.ctx = new AudioContext({ sampleRate: 16000 });
+    const src = voice.ctx.createMediaStreamSource(voice.stream), mute = voice.ctx.createGain();
+    voice.an = voice.ctx.createAnalyser(); voice.an.fftSize = 512; voice.an.smoothingTimeConstant = .55;
+    voice.freq = new Uint8Array(voice.an.frequencyBinCount);
+    voice.proc = voice.ctx.createScriptProcessor(1024, 1, 1); mute.gain.value = 0;
+    src.connect(voice.an); src.connect(voice.proc); voice.proc.connect(mute); mute.connect(voice.ctx.destination);
+    voice.proc.onaudioprocess = e => onChunk(e.inputBuffer.getChannelData(0));
+    return true;
+  } catch (e) { micClose(); toast('No microphone: ' + (e && e.message || e)); return false; }
+}
+function micClose() {
+  if (voice.proc) voice.proc.onaudioprocess = null;
+  if (voice.stream) voice.stream.getTracks().forEach(t => t.stop());
+  if (voice.ctx) voice.ctx.close().catch(() => {});
+  voice.stream = voice.ctx = voice.an = voice.proc = null; voice.seg = null; voice.pre = []; voice.hot = 0; voice.level = 0;
+}
+// when speech starts and stops: louder than the room's own noise for a moment, then 0.75 s of quiet
+function onChunk(x) {
+  const c = new Float32Array(x);
+  let s = 0; for (let i = 0; i < c.length; i++) s += c[i] * c[i];
+  const rms = Math.sqrt(s / c.length), loud = rms > Math.max(.012, voice.nf * 3.2);
+  voice.level += (Math.min(1, rms * 10) - voice.level) * .45;
+  if (!voice.seg) {
+    if (!loud) voice.nf = voice.nf * .97 + rms * .03;
+    voice.pre.push(c); if (voice.pre.length > 5) voice.pre.shift();      // keep the start of the first word
+    voice.hot = loud ? voice.hot + 1 : 0;
+    if (voice.hot >= 2) { voice.seg = { chunks: voice.pre, quiet: 0 }; voice.pre = []; voice.hot = 0; }
+    else if (voice.state === 'listening' && performance.now() > voice.until) { toast('Didn’t hear anything.'); voiceIdle(); }
+    return;
+  }
+  voice.seg.chunks.push(c);
+  voice.seg.quiet = loud ? 0 : voice.seg.quiet + 1;
+  if (voice.seg.quiet >= 12 || voice.seg.chunks.length * CHUNK_S > 14) { const seg = voice.seg; voice.seg = null; heard(seg); }
+}
+function pcm64(chunks) {
+  const out = new Int16Array(chunks.reduce((n, c) => n + c.length, 0)); let o = 0;
+  for (const c of chunks) for (let i = 0; i < c.length; i++) out[o++] = Math.max(-1, Math.min(1, c[i])) * 32767;
+  const b = new Uint8Array(out.buffer); let s = '';
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+async function heard(seg) {
+  if (seg.chunks.length * CHUNK_S < .45) return;                      // a click, a cough
+  const directed = voice.state === 'listening';
+  if (!directed && (voice.busy || voice.state !== 'standby')) return;
+  if (directed) { voice.state = 'thinking'; if (voiceMode() !== 'wake') micClose(); renderVoice(); }
+  voice.busy = true;
+  let h;
+  try { h = await invoke('voice_hear', { pcm: pcm64(seg.chunks), prompt: directed }); }
+  catch (e) { voice.busy = false; if (directed) { toast(String(e)); voiceIdle(); } return; }
+  voice.busy = false;
+  let text = (h.text || '').trim();
+  if (!directed) {                                // waiting for the name: it must open what was said
+    const m = WAKE.exec(text); if (!m) return;
+    const rest = text.slice(m[0].length).trim();
+    if (!wordsOf(rest)) { startListening(); return; }                  // just "Orbis": listening now
+    if (!REQUEST.test(rest)) return;                                   // talking about Orbis
+    text = rest;
+  }
+  voiceIdle();
+  if (!wordsOf(text) || NOISE.test(text)) { if (directed) toast('Didn’t catch that. Try again.'); return; }
+  voiceAct(text);
+}
+async function startListening() {
+  if (voiceMode() === 'off') return;
+  if (!voice.installed) { openVoicePrefs(); return; }
+  if (voice.state === 'listening') {              // pressed again: that's all
+    if (voice.seg) { const seg = voice.seg; voice.seg = null; heard(seg); } else voiceIdle();
+    return;
+  }
+  if (voice.state === 'thinking' || saverOn) return;
+  if (!await micOpen()) return;
+  voice.state = 'listening'; voice.until = performance.now() + 7000; voice.seg = null; voice.pre = []; voice.hot = 0;
+  renderVoice(); invoke('voice_warm');
+}
+const wakeAllowed = () => voiceMode() === 'wake' && voice.installed && !document.hidden && !saverOn;
+function voiceIdle() {
+  voice.seg = null;
+  if (wakeAllowed()) { voice.state = 'standby'; if (!voice.stream) syncWake(); }
+  else { voice.state = 'off'; micClose(); }
+  renderVoice();
+}
+// "Orbis" mode: the mic is on while Orbis is open and on screen, off in the tray, minimised or as screen saver
+async function syncWake() {
+  if (voice.state === 'listening' || voice.state === 'thinking') return;
+  if (wakeAllowed()) {
+    if (voice.state === 'standby' && voice.stream) return;
+    if (voice.opening) return;
+    voice.opening = true; const ok = await micOpen(); voice.opening = false;
+    voice.state = ok && wakeAllowed() ? 'standby' : 'off'; if (voice.state === 'off') micClose();
+    if (ok) invoke('voice_warm');
+  } else if (voice.state === 'standby' || voice.stream) { voice.state = 'off'; micClose(); }
+  renderVoice();
+}
+function renderVoice() {
+  const s = voice.state, box = $('q').closest('.search'), mic = $('mic');
+  box.classList.toggle('listening', s === 'listening'); box.classList.toggle('thinking', s === 'thinking'); box.classList.toggle('standby', s === 'standby');
+  mic.hidden = voiceMode() === 'off'; mic.setAttribute('aria-pressed', String(s === 'listening'));
+  $('q').placeholder = s === 'listening' ? 'Listening…' : s === 'thinking' ? 'One moment…' : s === 'standby' ? 'Find · or say “Orbis”' : 'Find';
+}
+
+// what was said -> what Orbis does
+const setQuery = v => { const q = $('q'); q.focus(); q.value = v; q.dispatchEvent(new Event('input')); };
+const RE_YES = /^(yes|yeah|yep|sure|ok|okay|confirm|do it|go ahead|نعم|اي|ايوه|أكيد|اكيد)$/i;
+const RE_NO = /^(no|nope|cancel|never ?mind|stop|forget it|لا|الغ|إلغاء|خلاص)$/i;
+const SPOKEN = [
+  [/^lock( the| my)?( pc| computer| laptop| screen)?$/, 'lock'],
+  [/^(go to sleep|sleep( the| my)?( pc| computer| laptop)?|put (the |my )?(pc|computer|laptop) to sleep)$/, 'sleep'],
+  [/^(restart|reboot)( the| my)?( pc| computer| laptop)?$/, 'restart'],
+  [/^(shut ?down|turn off|power off)( the| my)?( pc| computer| laptop)?$/, 'shutdown'],
+  [/^(sign|log) ?(out|off)$/, 'signout'],
+  [/^(re-?scan|rescan|re-?index)( the| my)? drives?$/, 'reindex'],
+];
+async function voiceAct(said) {
+  const t = said.trim().replace(/[.!؟?]+$/, '').replace(/^(please|can you|could you|would you|will you)\s+/i, '').replace(/,?\s+please$/i, '').trim();
+  const low = t.toLowerCase().replace(/[,]/g, '');
+  toast('“' + said.trim() + '”');
+  if (armed && RE_YES.test(low)) { const c = COMMANDS.find(x => x.key === armed); if (c && await runCmd(c)) resetAll(); return; }
+  if (RE_NO.test(low)) { armed = null; if (hasQuery()) resetAll(); return; }
+  const parsed = parseQuery(t);
+  if (parsed.only || parsed.nl) { setQuery(t); return; }                 // "check my email", "my meetings tomorrow"...
+  for (const [re, key] of SPOKEN) if (re.test(low)) {
+    const c = COMMANDS.find(x => x.key === key);
+    setQuery('> ' + key); clearTimeout(deb); runQuery('> ' + key);    // now, so the wait for "yes" is not undone
+    if (await runCmd(c)) resetAll(); else { toast(`Say “yes” to ${c.label.toLowerCase()}, or press Enter`); startListening(); }
+    return;
+  }
+  const th = /^(?:switch to |use |change to )?(?:the )?(\w+) theme$/.exec(low);
+  if (th && THEMES[th[1]]) { applyTheme(th[1], true); return; }
+  const o = /^(?:open|launch|start|run|افتح|شغل)\s+(?:the\s+|my\s+)?(.+?)(?:\s+(?:app|application|program))?$/i.exec(t);
+  if (o) {
+    const name = o[1].trim(), ln = name.toLowerCase();
+    const ws = wsCmds.find(c => c.ws && [c.ws.toLowerCase(), 'workspace ' + c.ws.toLowerCase(), c.ws.toLowerCase() + ' workspace'].includes(ln));
+    if (ws) { runCmd(ws); return; }
+    const c = COMMANDS.find(x => !x.confirm && !x.key.startsWith('theme ') && (x.label.toLowerCase() === ln || x.key === ln));
+    if (c) { if (await runCmd(c)) toast(c.label); return; }
+    let a = []; try { a = await invoke('apps_search', { q: name }); } catch { /* none */ }
+    if (a.length) { launch(a[0]); toast('Opening ' + a[0].name); return; }
+    setQuery(name); return;                                               // a file or folder: the results, Enter opens
+  }
+  const f = /^(?:search for|search|find|look for|where is|where's|show me)\s+(.+)$/i.exec(t);
+  setQuery(f ? f[1] : t);                                                 // anything else: words to the search box
+}
+
+// the settings
+async function loadVoice() {
+  try { const v = await invoke('voice_status'); voice.installed = v.installed; voice.installing = v.installing; } catch { /* keep */ }
+  renderVoicePrefs(); renderVoice(); syncWake();
+}
+function renderVoicePrefs() {
+  const m = voiceMode(), line = $('pvoiceline'); if (!line) return;
+  document.querySelectorAll('[data-voice]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.voice === m)));
+  if (voice.installing) line.innerHTML = `<span>${esc(voice.msg || 'Installing speech recognition…')}</span><div class="wbar"><i style="width:${voice.pct}%"></i></div>`;
+  else if (m !== 'off' && !voice.installed) line.innerHTML = '<span>Voice needs offline speech recognition (about 250 MB, once). Nothing you say leaves this PC.</span><div class="pacts"><button type="button" data-vinstall>INSTALL</button></div>';
+  else line.innerHTML = m === 'push' ? '<span>Press</span> Ctrl+Alt+Space <span>anywhere, or the mic in the search box, and speak.</span>'
+    : m === 'wake' ? '<span>Say</span> “Orbis” <span>and what you want. The mic is on while Orbis is open on screen; Ctrl+Alt+Space works too.</span>' : '';
+}
+function openVoicePrefs() { $('pop').hidden = false; $('gear').setAttribute('aria-expanded', 'true'); renderVoicePrefs(); $('pvoice').scrollIntoView({ block: 'nearest' }); }
+function installVoice() { if (voice.installing) return; voice.installing = true; voice.msg = 'Starting…'; voice.pct = 2; invoke('voice_install'); renderVoicePrefs(); }
+$('pvoice').onclick = async e => {
+  const b = e.target.closest('[data-voice]'); if (!b) return;
+  await setPrefs({ voice: b.dataset.voice });
+  if (b.dataset.voice !== 'off' && !voice.installed) installVoice();
+  if (voiceMode() === 'off' && voice.state !== 'off') { voice.state = 'off'; micClose(); }
+  renderVoicePrefs(); renderVoice(); syncWake();
+};
+$('pvoiceline').addEventListener('click', e => { if (e.target.closest('[data-vinstall]')) installVoice(); });
+$('mic').onclick = e => { e.preventDefault(); startListening(); };
+listen('voice-ptt', () => startListening());
+listen('voice-progress', e => { voice.installing = true; voice.msg = e.payload.msg; voice.pct = e.payload.pct; renderVoicePrefs(); });
+listen('voice-done', e => {
+  voice.installing = false; voice.installed = !!e.payload.ok;
+  toast(e.payload.ok ? 'Voice is ready: press Ctrl+Alt+Space and speak' : 'Voice setup failed: ' + e.payload.error);
+  renderVoicePrefs(); renderVoice(); syncWake();
+});
+document.addEventListener('visibilitychange', () => syncWake());
+
+// the core while Orbis listens: bars all round it follow your voice (low notes at the top, high at the
+// bottom, mirrored), a glow breathes with how loud you are; working it out, a bright arc goes round
+function drawVoice(b) {
+  const on = voice.state === 'listening' || voice.state === 'thinking';
+  voice.vis += ((on ? 1 : 0) - voice.vis) * .14;
+  if (voice.vis < .01) return;
+  const acc = rgbOf(theme.acc), lit = rgbOf(theme.lit), N = voice.bars.length, r0 = b * 1.04, v = voice.vis;
+  const live = voice.state === 'listening' && voice.an;
+  if (live) voice.an.getByteFrequencyData(voice.freq);
+  const glow = g.createRadialGradient(0, 0, b * .3, 0, 0, b * (1.25 + voice.level * .5));
+  glow.addColorStop(0, `rgba(${lit},${.16 * v * (.4 + voice.level)})`); glow.addColorStop(1, `rgba(${lit},0)`);
+  g.fillStyle = glow; g.beginPath(); g.arc(0, 0, b * (1.25 + voice.level * .5), 0, 6.3); g.fill();
+  g.lineCap = 'round'; g.lineWidth = Math.max(1.6, b * .016);
+  g.beginPath();
+  const now = performance.now() / 1000;
+  for (let i = 0; i < N; i++) {
+    const k = i < N / 2 ? i : N - 1 - i;                                  // mirrored: both sides alike
+    const f = live ? voice.freq[3 + k * 3] / 255 : .12 + .08 * Math.sin(now * 3 + k * .5);   // ~90 Hz to 3.3 kHz
+    voice.bars[i] += (f * f * 1.6 - voice.bars[i]) * .4;
+    const len = 3 + Math.min(1, voice.bars[i]) * b * .5, a = i / N * Math.PI * 2 - Math.PI / 2;
+    g.moveTo(Math.cos(a) * r0, Math.sin(a) * r0); g.lineTo(Math.cos(a) * (r0 + len), Math.sin(a) * (r0 + len));
+  }
+  g.strokeStyle = `rgba(${acc},${.8 * v})`; g.stroke();
+  if (voice.state === 'thinking') {
+    const a = now * 5;
+    g.beginPath(); g.arc(0, 0, r0 + 4, a, a + 1.3); g.strokeStyle = `rgba(${lit},${.9 * v})`; g.lineWidth = Math.max(2, b * .022); g.stroke();
+  }
+  g.lineCap = 'butt';
+}
 
 // ---------------------------------------------------------------- time travel
 // Drag back up to 60 days: the globe glows where files changed that day (the busiest folders named,
@@ -2008,6 +2247,7 @@ function setSaver(on) {
     tickClock(); refreshStatus().then(renderSaver);
   } else { $('q').focus(); }
   if (drift.on) fitGlobe();
+  if (on && voice.state !== 'off') voiceIdle(); else syncWake();
 }
 function endSaver() { if (!saverOn || performance.now() - saverT0 < 1500) return; invoke('exit_saver'); setSaver(false); }
 listen('saver', e => setSaver(!!e.payload));
@@ -2119,7 +2359,7 @@ setInterval(() => { if (G.size) computeHeat(); }, 600000);   // heat ages: re-ra
 (async () => {
   glInit(); resize(); applyTheme('ice', false); tickClock(); startLoop();
   const s = await refreshStatus();
-  if (s) { applyTheme(s.theme, false); kiosk = s.kiosk; renderWin(); if (s.saver_active) setSaver(true); }
+  if (s) { applyTheme(s.theme, false); kiosk = s.kiosk; renderWin(); if (s.saver_active) setSaver(true); loadVoice(); }
   // what this PC can run smoothly: limits for the settings, and anything saved beyond them is brought down
   invoke('system_profile').then(p => { profile = p; computeCaps(); renderPrefs(); clampToCaps(); }).catch(() => {});
   refreshNews(); loadWsCmds();

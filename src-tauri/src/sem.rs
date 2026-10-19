@@ -26,7 +26,7 @@ fn appdata() -> PathBuf {
 pub fn engine_dir() -> PathBuf {
     std::env::var("ORBIS_ENGINE").map(PathBuf::from).unwrap_or_else(|_| appdata().join("engine"))
 }
-fn python() -> PathBuf {
+pub(crate) fn python() -> PathBuf {
     engine_dir().join(r".venv\Scripts\python.exe")
 }
 fn data() -> PathBuf {
