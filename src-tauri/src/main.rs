@@ -733,10 +733,13 @@ fn start_index(app: AppHandle, force: bool) {
             }
             let t = Instant::now();
             let set = settings_of(&app2);
+            // what this scan covers, taken now: a drive that comes or goes while it runs must still
+            // count as a change on the next start
+            let print = scope_print(&set);
             let ix = Index::build(&roots(&set), &Skip::new(&skip_list(&set)), &s.progress);
             done.store(true, Ordering::Relaxed);
             let _ = ix.save(&cache_path());
-            let _ = std::fs::write(scope_file(), scope_print(&set));
+            let _ = std::fs::write(scope_file(), print);
             let secs = t.elapsed().as_secs_f32();
             *s.idx.write().unwrap() = Some(Arc::new(ix));
             let _ = app2.emit("index-built", secs);
